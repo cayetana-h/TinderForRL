@@ -5,10 +5,8 @@ import os
 import sys
 import importlib.util
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-AGENT_PATH = os.path.abspath(os.path.join(CURRENT_DIR, "..", "agents", "agent_qtable.py"))
+AGENT_PATH  = os.path.abspath(os.path.join(CURRENT_DIR, "..", "agents", "agent_qtable.py"))
 
 spec = importlib.util.spec_from_file_location("agent_qtable", AGENT_PATH)
 agent_mod = importlib.util.module_from_spec(spec)
@@ -17,36 +15,29 @@ QTableAgent = agent_mod.QTableAgent
 print("Agent loaded from:", AGENT_PATH)
 
 
-
 def load_config(path):
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
 
-def shape_reward(obs, obs_next, gamma, scale):
+def shape_reward(obs, obs_next, gamma):
     """
-    Potential-based reward shaping using position as potential.
+    Velocity-based potential shaping.
 
-    phi(s) = position of the car
-    shaped_reward = r + gamma * phi(s') - phi(s)
+    phi(s) = |velocity|
+    F(s,s') = gamma * phi(s') - phi(s)
 
-    This gives a positive signal whenever the car moves right (toward goal),
-    and a negative signal when it moves left — but crucially, the agent
-    learns that building momentum (going left first) is worth the short
-    term negative shaping because it gains velocity.
-
-    The scale needs to be large enough to overcome the -1/step base reward.
-    A scale of 100-150 works well empirically for this environment.
+    Rewards gaining speed regardless of direction.
+    This directly incentivises the rocking strategy:
+    the car must build speed left AND right to escape.
+    Unlike position-based shaping, there is no local optimum
+    where the car can sit still and collect reward.
     """
-    phi_current = obs[0]       # current position
-    phi_next = obs_next[0]     # next position
-    return gamma * phi_next - phi_current
+    return gamma * abs(obs_next[1]) - abs(obs[1])
 
 
 def train():
-    config_path = os.path.join(
-        os.path.dirname(__file__), "..", "config", "qtable_discrete.yaml"
-    )
+    config_path = os.path.join(CURRENT_DIR, "..", "config", "qtable_discrete.yaml")
     config = load_config(config_path)
 
     env = gym.make("MountainCar-v0")
@@ -63,32 +54,39 @@ def train():
         epsilon_decay=config["epsilon_decay"],
     )
 
-    use_shaping = config.get("use_reward_shaping", True)
-    shaping_scale = config.get("shaping_scale", 100.0)
+    use_shaping   = config.get("use_reward_shaping", True)
+    shaping_scale = config.get("shaping_scale", 300.0)
 
-    rewards_per_episode = []
-    successes = 0
+    raw_rewards    = []
+    shaped_rewards = []
+    successes      = 0
 
     for episode in range(config["num_episodes"]):
         obs, _ = env.reset()
         state = agent.discretize_state(obs)
-        total_reward = 0
+        total_raw    = 0
+        total_shaped = 0
 
         for step in range(config["max_steps"]):
             action = agent.select_action(state)
             obs_next, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
 
-            if use_shaping:
-                bonus = shape_reward(obs, obs_next, agent.gamma, shaping_scale)
+            raw_r = reward  # always track the real reward separately
+
+            if use_shaping and not terminated:
+                # Only shape non-terminal steps
+                # Terminal step already has a clear signal (-1 at goal)
+                bonus  = shape_reward(obs, obs_next, agent.gamma)
                 reward = reward + shaping_scale * bonus
 
             next_state = agent.discretize_state(obs_next)
             agent.update(state, action, reward, next_state, done)
 
-            obs = obs_next
+            obs   = obs_next
             state = next_state
-            total_reward += reward
+            total_raw    += raw_r
+            total_shaped += reward
 
             if done:
                 if terminated:
@@ -96,26 +94,44 @@ def train():
                 break
 
         agent.decay_epsilon()
-        rewards_per_episode.append(total_reward)
+        raw_rewards.append(total_raw)
+        shaped_rewards.append(total_shaped)
 
         if episode % 500 == 0:
-            recent = rewards_per_episode[-100:] if episode >= 100 else rewards_per_episode
+            recent_raw = raw_rewards[-100:] if episode >= 100 else raw_rewards
             print(
                 f"Ep {episode:5d} | "
-                f"Reward: {total_reward:8.2f} | "
-                f"Avg(last 100): {np.mean(recent):8.2f} | "
+                f"Raw avg: {np.mean(recent_raw):7.1f} | "
                 f"Epsilon: {agent.epsilon:.4f} | "
-                f"Successes: {successes}"
+                f"Successes so far: {successes}"
             )
 
-    os.makedirs("../results/models", exist_ok=True)
+        # Greedy evaluation every 2000 episodes
+        if episode % 2000 == 0 and episode > 0:
+            eval_env      = gym.make("MountainCar-v0")
+            eval_wins     = 0
+            for _ in range(20):
+                o, _ = eval_env.reset()
+                for _ in range(200):
+                    s = agent.discretize_state(o)
+                    a = int(np.argmax(agent.q_table[s]))
+                    o, _, term, trunc, _ = eval_env.step(a)
+                    if term:
+                        eval_wins += 1
+                        break
+                    if trunc:
+                        break
+            print(f"  → Greedy eval: {eval_wins}/20")
+
+    os.makedirs("../results/models",  exist_ok=True)
     os.makedirs("../results/metrics", exist_ok=True)
 
     agent.save("../results/models/q_table.npy")
-    np.save("../results/metrics/rewards.npy", np.array(rewards_per_episode))
+    np.save("../results/metrics/rewards.npy",        np.array(raw_rewards))
+    np.save("../results/metrics/rewards_shaped.npy", np.array(shaped_rewards))
 
-    print(f"\nTraining done. Total successes: {successes}/{config['num_episodes']}")
-    print(f"Q-table shape: {agent.q_table.shape} | Max Q: {np.max(agent.q_table):.4f}")
+    print(f"\nDone. Successes: {successes}/{config['num_episodes']}")
+    print(f"Q-table: {agent.q_table.shape} | Max Q: {np.max(agent.q_table):.4f}")
 
 
 if __name__ == "__main__":
