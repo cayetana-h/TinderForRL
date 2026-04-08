@@ -38,9 +38,9 @@ def shape_reward(obs, obs_next, gamma, scale):
     The scale needs to be large enough to overcome the -1/step base reward.
     A scale of 100-150 works well empirically for this environment.
     """
-    phi_current = -obs[0]       # current potential
-    phi_next = -obs_next[0]     # next potential
-    return phi_next - phi_current
+    phi_current = obs[0]       # current position
+    phi_next = obs_next[0]     # next position
+    return gamma * phi_next - phi_current
 
 
 def train():
@@ -116,26 +116,6 @@ def train():
 
     print(f"\nTraining done. Total successes: {successes}/{config['num_episodes']}")
     print(f"Q-table shape: {agent.q_table.shape} | Max Q: {np.max(agent.q_table):.4f}")
-
-    # Test the learned policy
-    print("\nTesting learned policy...")
-    successes_test = 0
-    epsilon_backup = agent.epsilon
-    agent.epsilon = 0.0  # Force greedy
-    for test_ep in range(10):
-        obs, _ = env.reset()
-        state = agent.discretize_state(obs)
-        for step in range(config["max_steps"]):
-            action = agent.select_action(state)
-            obs_next, reward, terminated, truncated, _ = env.step(action)
-            done = terminated or truncated
-            state = agent.discretize_state(obs_next)
-            if done:
-                if terminated:
-                    successes_test += 1
-                break
-    agent.epsilon = epsilon_backup
-    print(f"Test successes: {successes_test}/10")
 
 
 if __name__ == "__main__":
