@@ -1,0 +1,6 @@
+numpy
+gymnasium
+PyYAML
+agents
+scikit-learn
+
