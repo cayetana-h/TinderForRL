@@ -25,9 +25,8 @@ class QTableAgent:
         self.state_low = np.array(state_low, dtype=float)
         self.state_high = np.array(state_high, dtype=float)
 
-        # Optimistic initialization: -200 is the worst possible return
-        # This encourages exploration of unvisited states
-        self.q_table = np.ones(tuple(self.num_bins) + (num_actions,)) * (-200.0)
+        # Neutral initialization
+        self.q_table = np.zeros(tuple(self.num_bins) + (num_actions,))
 
         # FIXED: divide by num_bins, not (num_bins - 1)
         self.bin_width = (self.state_high - self.state_low) / self.num_bins

@@ -45,7 +45,7 @@ def shape_reward(obs, obs_next, gamma, scale):
 
 def train():
     config_path = os.path.join(
-        os.path.dirname(__file__), "..", "config", "qtable_discrete.yaml"
+        os.path.dirname(__file__), "..", "config", "qtable_continuous.yaml"
     )
     config = load_config(config_path)
 
@@ -65,14 +65,20 @@ def train():
 
     use_shaping = config.get("use_reward_shaping", True)
     shaping_scale = config.get("shaping_scale", 100.0)
+    use_cost_penalty = config.get("use_cost_penalty", False)
+    cost_coefficient = config.get("cost_coefficient", 0.1)
 
     rewards_per_episode = []
+    action_counts_per_episode = []
+    costs_per_episode = []
     successes = 0
 
     for episode in range(config["num_episodes"]):
         obs, _ = env.reset()
         state = agent.discretize_state(obs)
         total_reward = 0
+        action_count = 0
+        total_cost = 0
 
         for step in range(config["max_steps"]):
             action = agent.select_action(state)
@@ -82,6 +88,11 @@ def train():
             if use_shaping:
                 bonus = shape_reward(obs, obs_next, agent.gamma, shaping_scale)
                 reward = reward + shaping_scale * bonus
+
+            if use_cost_penalty and action != 1:  # Assuming action 1 is neutral
+                reward -= cost_coefficient
+                action_count += 1
+                total_cost += cost_coefficient
 
             next_state = agent.discretize_state(obs_next)
             agent.update(state, action, reward, next_state, done)
@@ -97,6 +108,8 @@ def train():
 
         agent.decay_epsilon()
         rewards_per_episode.append(total_reward)
+        action_counts_per_episode.append(action_count)
+        costs_per_episode.append(total_cost)
 
         if episode % 500 == 0:
             recent = rewards_per_episode[-100:] if episode >= 100 else rewards_per_episode
@@ -105,14 +118,21 @@ def train():
                 f"Reward: {total_reward:8.2f} | "
                 f"Avg(last 100): {np.mean(recent):8.2f} | "
                 f"Epsilon: {agent.epsilon:.4f} | "
-                f"Successes: {successes}"
+                f"Successes: {successes} | "
+                f"Actions: {action_count} | "
+                f"Cost: {total_cost:.2f}"
             )
 
-    os.makedirs("../results/models", exist_ok=True)
-    os.makedirs("../results/metrics", exist_ok=True)
+    results_dir = os.path.join(CURRENT_DIR, "..", "results")
+    models_dir = os.path.join(results_dir, "models")
+    metrics_dir = os.path.join(results_dir, "metrics")
+    os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(metrics_dir, exist_ok=True)
 
-    agent.save("../results/models/q_table.npy")
-    np.save("../results/metrics/rewards.npy", np.array(rewards_per_episode))
+    agent.save(os.path.join(models_dir, "continuous_q_table.npy"))
+    np.save(os.path.join(metrics_dir, "continuous_rewards.npy"), np.array(rewards_per_episode))
+    np.save(os.path.join(metrics_dir, "continuous_action_counts.npy"), np.array(action_counts_per_episode))
+    np.save(os.path.join(metrics_dir, "continuous_costs.npy"), np.array(costs_per_episode))
 
     print(f"\nTraining done. Total successes: {successes}/{config['num_episodes']}")
     print(f"Q-table shape: {agent.q_table.shape} | Max Q: {np.max(agent.q_table):.4f}")

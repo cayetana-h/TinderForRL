@@ -12,3 +12,6 @@ num_bins: [100, 100]
 
 use_reward_shaping: false
 shaping_scale: 1000.0
+
+use_cost_penalty: true
+cost_coefficient: 0.1
