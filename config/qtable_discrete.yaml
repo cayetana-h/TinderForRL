@@ -3,12 +3,12 @@ gamma: 0.99
 
 epsilon_start: 1.0
 epsilon_end: 0.01
-epsilon_decay: 0.9995
+epsilon_decay: 0.9998     # hits 0.01 around ep 15000, not ep 6000
 
-num_episodes: 15000
+num_episodes: 20000
 max_steps: 200
 
 num_bins: [48, 48]
 
 use_reward_shaping: true
-shaping_scale: 100.0
+shaping_scale: 300.0      # velocity shaping needs higher scale (values are tiny)
