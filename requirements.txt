@@ -3,5 +3,6 @@ gymnasium
 PyYAML
 agents
 scikit-learn
+torch
 matplotlib
 
