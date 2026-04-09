@@ -38,8 +38,8 @@ def shape_reward(obs, obs_next, gamma, scale):
     The scale needs to be large enough to overcome the -1/step base reward.
     A scale of 100-150 works well empirically for this environment.
     """
-    phi_current = -obs[0]       # current potential
-    phi_next = -obs_next[0]     # next potential
+    phi_current = obs[0]       # current potential (position)
+    phi_next = obs_next[0]     # next potential (position)
     return phi_next - phi_current
 
 

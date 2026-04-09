@@ -6,8 +6,8 @@ from mpl_toolkits.mplot3d import Axes3D
 import gymnasium as gym
 import os
 
-# Get current working directory
-CURRENT_DIR = "/Users/gabyvega/TinderForRL"
+# Use the script directory as the base path
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Path to agent
 AGENTS_PATH = os.path.join(CURRENT_DIR, "agents", "agent_qtable.py")
