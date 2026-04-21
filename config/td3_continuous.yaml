@@ -1,0 +1,29 @@
+# TD3 hyperparameters for MountainCarContinuous-v0
+# Cost signal: action intensity (built-in -0.1 * action^2 in the env reward)
+
+# Networks
+lr_actor: 0.0003
+lr_critic: 0.0003
+
+# RL
+gamma: 0.99
+tau: 0.005              # soft-update rate for target networks
+
+# TD3-specific
+policy_noise: 0.2       # std of noise added to target actions (scaled by max_action)
+noise_clip: 0.5         # clip target noise to [-noise_clip, noise_clip] * max_action
+policy_delay: 2         # update actor every N critic steps
+
+# Replay buffer
+buffer_size: 1000000
+batch_size: 256
+
+# Training
+num_episodes: 500
+max_steps: 1000
+warmup_steps: 5000      # random actions before learning starts
+exploration_noise: 0.3  # std of Gaussian noise added to actor output during training
+
+# Reward shaping (velocity-based potential, same logic as discrete agent)
+use_reward_shaping: true
+shaping_scale: 50.0
