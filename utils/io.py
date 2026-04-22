@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import yaml
 
@@ -49,20 +49,20 @@ def save_csv_rows(
         return
 
     if fieldnames is None:
-        keys: list[str] = []
+        ordered_keys: list[str] = []
         seen: set[str] = set()
         for row in rows:
-            for k in row.keys():
-                if k not in seen:
-                    seen.add(k)
-                    keys.append(k)
-        fieldnames = keys
+            for key in row.keys():
+                if key not in seen:
+                    seen.add(key)
+                    ordered_keys.append(key)
+        fieldnames = ordered_keys
 
     with open(path, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(fieldnames))
         writer.writeheader()
         for row in rows:
-            writer.writerow({k: row.get(k, "") for k in fieldnames})
+            writer.writerow({key: row.get(key, "") for key in fieldnames})
 
 
 def save_numpy_array(path: str | Path, array) -> None:
@@ -73,8 +73,8 @@ def save_numpy_array(path: str | Path, array) -> None:
     np.save(path, array)
 
 
-def as_float(x: Any, default: float = 0.0) -> float:
-    try:
-        return float(x)
-    except Exception:
-        return default
+def save_text(text: str, path: str | Path) -> None:
+    path = Path(path)
+    ensure_dir(path.parent)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
