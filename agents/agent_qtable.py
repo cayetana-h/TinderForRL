@@ -1,4 +1,23 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Sequence
+
 import numpy as np
+
+
+@dataclass
+class QTableConfig:
+    state_low: Sequence[float]
+    state_high: Sequence[float]
+    num_bins: Sequence[int]
+    num_actions: int
+    learning_rate: float = 0.2
+    gamma: float = 0.99
+    epsilon_start: float = 1.0
+    epsilon_end: float = 0.01
+    epsilon_decay: float = 0.9998
 
 
 class QTableAgent:
@@ -15,36 +34,38 @@ class QTableAgent:
         epsilon_decay=0.9998,
     ):
         self.num_bins = np.array(num_bins, dtype=int)
-        self.num_actions = num_actions
-        self.lr = learning_rate
-        self.gamma = gamma
-        self.epsilon = epsilon_start
-        self.epsilon_end = epsilon_end
-        self.epsilon_decay = epsilon_decay
+        self.num_actions = int(num_actions)
+        self.lr = float(learning_rate)
+        self.gamma = float(gamma)
+        self.epsilon = float(epsilon_start)
+        self.epsilon_end = float(epsilon_end)
+        self.epsilon_decay = float(epsilon_decay)
 
         self.state_low = np.array(state_low, dtype=float)
         self.state_high = np.array(state_high, dtype=float)
 
-        # Zero init — shaping will build the gradient organically
-        # -200 init conflicts with shaped reward scale and kills exploration
-        self.q_table = np.zeros(tuple(self.num_bins) + (num_actions,))
-
-        self.bin_width = (self.state_high - self.state_low) / self.num_bins
+        self.q_table = np.zeros(tuple(self.num_bins) + (self.num_actions,), dtype=np.float32)
+        self.bin_width = np.maximum((self.state_high - self.state_low) / self.num_bins, 1e-12)
 
     def discretize_state(self, state):
+        state = np.asarray(state, dtype=float)
         indices = (state - self.state_low) / self.bin_width
         indices = np.clip(indices.astype(int), 0, self.num_bins - 1)
         return tuple(indices)
 
     def select_action(self, state):
         if np.random.random() < self.epsilon:
-            return np.random.randint(self.num_actions)
+            return int(np.random.randint(self.num_actions))
+        return int(np.argmax(self.q_table[state]))
+
+    def greedy_action(self, state):
         return int(np.argmax(self.q_table[state]))
 
     def update(self, state, action, reward, next_state, done):
         best_next = np.max(self.q_table[next_state])
-        target = reward + (0.0 if done else self.gamma * best_next)
-        self.q_table[state + (action,)] += self.lr * (target - self.q_table[state + (action,)])
+        target = float(reward) + (0.0 if done else self.gamma * best_next)
+        idx = state + (int(action),)
+        self.q_table[idx] += self.lr * (target - self.q_table[idx])
 
     def decay_epsilon(self):
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)

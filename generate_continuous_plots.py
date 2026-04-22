@@ -1,129 +1,61 @@
-import importlib.util
-import numpy as np
+from __future__ import annotations
+
+from pathlib import Path
+
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from mpl_toolkits.mplot3d import Axes3D
-import gymnasium as gym
-import os
+import numpy as np
 
-# Use the script directory as the base path
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+from utils.io import ensure_dir, load_json
 
-# Path to agent
-AGENTS_PATH = os.path.join(CURRENT_DIR, "agents", "agent_qtable.py")
 
-# Load QTableAgent dynamically
-_spec = importlib.util.spec_from_file_location("agent_qtable", AGENTS_PATH)
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
-QTableAgent = _mod.QTableAgent
+ROOT = Path(__file__).resolve().parent
 
-print("Agent loaded successfully from:", AGENTS_PATH)
 
-# Consistent plot style
-plt.rcParams.update({
-    "figure.facecolor": "white",
-    "axes.facecolor": "#f8f8f8",
-    "axes.grid": True,
-    "grid.alpha": 0.3,
-    "font.size": 11,
-    "axes.titlesize": 13,
-    "axes.labelsize": 11,
-})
+def main():
+    metrics_dir = ROOT / "results" / "metrics" / "qtable_action_cost"
+    comparison_dir = ensure_dir(ROOT / "results" / "comparison")
 
-# Load the trained Q-table
-q_table_path = os.path.join(CURRENT_DIR, "results", "models", "continuous_q_table.npy")
-q_table = np.load(q_table_path)
+    rewards_path = metrics_dir / "rewards.npy"
+    shaped_path = metrics_dir / "shaped_rewards.npy"
+    costs_path = metrics_dir / "costs.npy"
+    summary_path = metrics_dir / "summary.json"
 
-# Load metrics
-rewards = np.load(os.path.join(CURRENT_DIR, "results", "metrics", "continuous_rewards.npy"))
-action_counts = np.load(os.path.join(CURRENT_DIR, "results", "metrics", "continuous_action_counts.npy"))
-costs = np.load(os.path.join(CURRENT_DIR, "results", "metrics", "continuous_costs.npy"))
+    if not rewards_path.exists():
+        print("No qtable action-cost metrics found.")
+        return
 
-print(f"Q-table shape: {q_table.shape}")
-print(f"Total episodes: {len(rewards)}")
-print(f"Max reward: {np.max(rewards):.2f}")
-print(f"Min reward: {np.min(rewards):.2f}")
-print(f"Average action count: {np.mean(action_counts):.2f}")
-print(f"Average cost: {np.mean(costs):.2f}")
+    rewards = np.load(rewards_path)
+    shaped_rewards = np.load(shaped_path) if shaped_path.exists() else None
+    costs = np.load(costs_path) if costs_path.exists() else None
 
-# Plot learning curves
-fig, axes = plt.subplots(3, 1, figsize=(12, 12))
+    if summary_path.exists():
+        print(load_json(summary_path))
 
-# Rewards
-axes[0].plot(rewards, alpha=0.7)
-axes[0].set_title("Episode Rewards")
-axes[0].set_xlabel("Episode")
-axes[0].set_ylabel("Total Reward")
-axes[0].grid(True)
+    plt.figure(figsize=(11, 4))
+    plt.plot(rewards, label="raw reward")
+    if shaped_rewards is not None:
+        plt.plot(shaped_rewards, label="shaped reward")
+    plt.title("Q-table action-cost rewards")
+    plt.xlabel("Episode")
+    plt.ylabel("Return")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(comparison_dir / "qtable_action_cost_rewards.png", dpi=160, bbox_inches="tight")
+    plt.close()
 
-# Action counts
-axes[1].plot(action_counts, alpha=0.7, color='orange')
-axes[1].set_title("Non-Null Actions per Episode")
-axes[1].set_xlabel("Episode")
-axes[1].set_ylabel("Action Count")
-axes[1].grid(True)
+    if costs is not None:
+        plt.figure(figsize=(11, 4))
+        plt.plot(costs, label="cost")
+        plt.title("Q-table action-cost per episode")
+        plt.xlabel("Episode")
+        plt.ylabel("Cost")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(comparison_dir / "qtable_action_cost_costs.png", dpi=160, bbox_inches="tight")
+        plt.close()
 
-# Costs
-axes[2].plot(costs, alpha=0.7, color='red')
-axes[2].set_title("Total Cost per Episode")
-axes[2].set_xlabel("Episode")
-axes[2].set_ylabel("Cost")
-axes[2].grid(True)
+    print("Continuous plots saved.")
 
-plt.tight_layout()
-plt.savefig(os.path.join(CURRENT_DIR, "results", "learning_curves_continuous.png"), dpi=150, bbox_inches='tight')
-plt.close()
 
-# Recreate agent for discretization
-env = gym.make("MountainCar-v0")
-agent = QTableAgent(
-    state_low=env.observation_space.low,
-    state_high=env.observation_space.high,
-    num_bins=[100, 100],
-    num_actions=3,
-)
-agent.q_table = q_table
-
-# Create policy grid
-pos_bins = np.linspace(env.observation_space.low[0], env.observation_space.high[0], 100)
-vel_bins = np.linspace(env.observation_space.low[1], env.observation_space.high[1], 100)
-
-policy = np.zeros((100, 100))
-for i, pos in enumerate(pos_bins):
-    for j, vel in enumerate(vel_bins):
-        state = agent.discretize_state([pos, vel])
-        policy[i, j] = np.argmax(q_table[state])
-
-# Plot policy
-fig, ax = plt.subplots(figsize=(10, 8))
-cmap = plt.cm.get_cmap('viridis', 3)
-im = ax.imshow(policy.T, origin='lower', extent=[pos_bins[0], pos_bins[-1], vel_bins[0], vel_bins[-1]], cmap=cmap, aspect='auto')
-ax.set_title("Learned Policy")
-ax.set_xlabel("Position")
-ax.set_ylabel("Velocity")
-
-# Colorbar
-cbar = plt.colorbar(im, ax=ax, ticks=[0, 1, 2])
-cbar.set_label("Action")
-cbar.set_ticklabels(["Left", "Neutral", "Right"])
-
-plt.savefig(os.path.join(CURRENT_DIR, "results", "policy_visualization_continuous.png"), dpi=150, bbox_inches='tight')
-plt.close()
-
-# Value surface
-value_surface = np.max(q_table, axis=2)
-
-fig = plt.figure(figsize=(12, 8))
-ax = fig.add_subplot(111, projection='3d')
-X, Y = np.meshgrid(pos_bins, vel_bins)
-ax.plot_surface(X, Y, value_surface.T, cmap='viridis')
-ax.set_title("Value Surface")
-ax.set_xlabel("Position")
-ax.set_ylabel("Velocity")
-ax.set_zlabel("Max Q-Value")
-
-plt.savefig(os.path.join(CURRENT_DIR, "results", "value_surface_continuous.png"), dpi=150, bbox_inches='tight')
-plt.close()
-
-print("Plots saved successfully.")
+if __name__ == "__main__":
+    main()
