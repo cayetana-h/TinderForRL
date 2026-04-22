@@ -1,23 +1,13 @@
-# Deep RL Configuration for Continuous MountainCar
-# Shared parameters for TD3 and SAC
-
-# Environment
-intensity_cost: 0.1  # Cost proportional to action magnitude: -0.1 * action²
-
-# Common training parameters
 total_timesteps: 100000
 gamma: 0.99
 tau: 0.005
-
-# Replay buffer and batch
 buffer_size: 100000
 batch_size: 64
 learning_starts: 1000
-
-# Action noise (TD3 specific)
 td3_noise_scale: 0.1
 policy_delay: 2
-
-# Learning rates
 td3_learning_rate: 0.001
 sac_learning_rate: 0.0003
+eval_episodes: 20
+extra_action_cost: 0.0
+seed: 42
