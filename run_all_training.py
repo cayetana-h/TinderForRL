@@ -1,103 +1,69 @@
-#!/usr/bin/env python3
-"""
-Master training orchestrator for TinderForRL project.
+from __future__ import annotations
 
-Runs all RL approaches in sequence:
-1. Discrete Q-Learning (velocity shaping)
-2. Continuous Q-Learning (non-null action cost)
-3. TD3 & SAC (action intensity cost)
-
-Then generates comprehensive analysis and comparison.
-"""
-
-import os
-import sys
 import subprocess
+import sys
+from pathlib import Path
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = CURRENT_DIR  # This is the project root
+
+ROOT = Path(__file__).resolve().parent
 
 
-def run_command(cmd, description):
-    """Run a command and report status."""
-    print("\n" + "=" * 70)
-    print(f"Running: {description}")
-    print("=" * 70)
-    print(f"Command: {' '.join(cmd)}\n")
-    
-    result = subprocess.run(cmd, cwd=PROJECT_ROOT)
-    
-    if result.returncode != 0:
-        print(f"\n⚠ WARNING: {description} failed with return code {result.returncode}")
-        return False
-    else:
-        print(f"\n✓ {description} completed successfully")
-        return True
+def run(script: Path, *args: str):
+    cmd = [sys.executable, str(script), *args]
+    subprocess.run(cmd, check=True)
 
 
 def main():
-    """Run the full training pipeline."""
-    
-    print("\n" + "=" * 70)
-    print("TINDER FOR RL - FULL TRAINING PIPELINE")
-    print("=" * 70)
-    print("\nThis will train:")
-    print("  1. Discrete Q-Learning (velocity shaping)")
-    print("  2. Continuous Q-Learning (non-null action cost)")
-    print("  3. TD3 & SAC (action intensity cost)")
-    print("\nThen compare all approaches.\n")
-    
-    # Step 1: Discrete Q-learning
-    success = run_command(
-        [sys.executable, "training/train_qtable_discrete.py"],
-        "Discrete Q-Learning Training"
+    run(ROOT / "training" / "train_qtable_discrete.py")
+    run(ROOT / "training" / "train_continuous_qtable.py")
+    run(ROOT / "training" / "train_continuous_deeprl.py")
+
+    run(
+        ROOT / "evaluation" / "evaluate_qtable.py",
+        "--model",
+        str(ROOT / "results" / "models" / "qtable_discrete.npy"),
+        "--config",
+        str(ROOT / "config" / "qtable_discrete.yaml"),
+        "--name",
+        "qtable_discrete",
     )
-    if not success:
-        print("Failed at step 1. Continuing anyway...")
-    
-    # Step 2: Continuous Q-learning
-    success = run_command(
-        [sys.executable, "training/train_continuous_qtable.py"],
-        "Continuous Q-Learning Training (Non-Null Action Cost)"
+
+    run(
+        ROOT / "evaluation" / "evaluate_qtable.py",
+        "--model",
+        str(ROOT / "results" / "models" / "qtable_action_cost.npy"),
+        "--config",
+        str(ROOT / "config" / "qtable_continuous.yaml"),
+        "--name",
+        "qtable_action_cost",
     )
-    if not success:
-        print("Failed at step 2. Continuing anyway...")
-    
-    # Step 3: Deep RL (TD3 & SAC)
-    success = run_command(
-        [sys.executable, "training/train_continuous_deeprl.py"],
-        "Deep RL Training (TD3 & SAC)"
+
+    run(
+        ROOT / "evaluation" / "evaluate_sb3.py",
+        "--model",
+        str(ROOT / "results" / "models" / "td3_continuous" / "td3_continuous.zip"),
+        "--algo",
+        "td3",
+        "--config",
+        str(ROOT / "config" / "deeprl.yaml"),
+        "--name",
+        "td3_continuous",
     )
-    if not success:
-        print("Failed at step 3. Continuing anyway...")
-    
-    # Step 4: Generate plots for discrete
-    success = run_command(
-        [sys.executable, "generate_continuous_plots.py"],
-        "Generate Continuous Plots"
+
+    run(
+        ROOT / "evaluation" / "evaluate_sb3.py",
+        "--model",
+        str(ROOT / "results" / "models" / "sac_continuous" / "sac_continuous.zip"),
+        "--algo",
+        "sac",
+        "--config",
+        str(ROOT / "config" / "deeprl.yaml"),
+        "--name",
+        "sac_continuous",
     )
-    if not success:
-        print("Warning: plot generation failed")
-    
-    # Step 5: Comparison analysis
-    success = run_command(
-        [sys.executable, "analysis/compare_all_approaches.py"],
-        "Comprehensive Comparison Analysis"
-    )
-    if not success:
-        print("Warning: comparison failed")
-    
-    print("\n" + "=" * 70)
-    print("PIPELINE COMPLETE")
-    print("=" * 70)
-    print("\nResults saved to:")
-    print("  - results/models/     (trained models)")
-    print("  - results/metrics/    (training metrics)")
-    print("  - results/comparison/ (comparison plots)")
-    print("\nNext: Run analysis notebooks in Jupyter")
-    print("  - analysis/qtable_discrete_analysis.ipynb")
-    print("  - analysis/qtable_continuous_analysis.ipynb")
-    print("=" * 70 + "\n")
+
+    run(ROOT / "analysis" / "compare_all_approaches.py")
+    run(ROOT / "generate_continuous_plots.py")
 
 
 if __name__ == "__main__":
