@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -8,9 +7,7 @@ import numpy as np
 
 from utils.io import ensure_dir, load_json, save_csv_rows
 
-
 ROOT = Path(__file__).resolve().parents[1]
-
 
 EXPERIMENTS = [
     ("Q-table discrete", ROOT / "results" / "metrics" / "qtable_discrete" / "summary.json"),
@@ -22,24 +19,24 @@ EXPERIMENTS = [
 
 def load_summaries():
     rows = []
-    for name, path in EXPERIMENTS:
-        if not path.exists():
+    for method_name, summary_path in EXPERIMENTS:
+        if not summary_path.exists():
             continue
-        data = load_json(path)
-        data = dict(data)
-        data["method"] = name
-        rows.append(data)
+        summary = dict(load_json(summary_path))
+        summary["method"] = method_name
+        rows.append(summary)
     return rows
 
 
 def plot_bar(rows, key, title, ylabel, output_path):
     if not rows:
         return
-    labels = [r["method"] for r in rows]
-    values = [float(r.get(key, 0.0)) for r in rows]
+
+    labels = [row["method"] for row in rows]
+    values = [float(row.get(key, 0.0)) for row in rows]
 
     plt.figure(figsize=(10, 5))
-    bars = plt.bar(labels, values)
+    plt.bar(labels, values)
     plt.title(title)
     plt.ylabel(ylabel)
     plt.xticks(rotation=20, ha="right")
@@ -63,19 +60,18 @@ def main():
     plot_bar(rows, "mean_steps", "Mean steps by approach", "Mean steps", comparison_dir / "mean_steps.png")
     plot_bar(rows, "mean_cost", "Mean cost by approach", "Mean cost", comparison_dir / "mean_cost.png")
 
-    # Simple text summary
-    best_success = max(rows, key=lambda r: float(r.get("success_rate", 0.0)))
-    best_reward = max(rows, key=lambda r: float(r.get("mean_reward", -1e9)))
+    best_success = max(rows, key=lambda row: float(row.get("success_rate", 0.0)))
+    best_reward = max(rows, key=lambda row: float(row.get("mean_reward", -1e9)))
 
-    report = [
-        f"Best success rate: {best_success['method']} ({best_success.get('success_rate', 0.0):.3f})",
-        f"Best mean reward: {best_reward['method']} ({best_reward.get('mean_reward', 0.0):.3f})",
+    notes = [
+        f"Best success rate: {best_success['method']} ({float(best_success.get('success_rate', 0.0)):.3f})",
+        f"Best mean reward: {best_reward['method']} ({float(best_reward.get('mean_reward', 0.0)):.3f})",
     ]
-    (comparison_dir / "comparison_notes.txt").write_text("\n".join(report), encoding="utf-8")
+    (comparison_dir / "comparison_notes.txt").write_text("\n".join(notes), encoding="utf-8")
 
     print("Comparison saved to", comparison_dir)
-    for r in rows:
-        print(r)
+    for row in rows:
+        print(row)
 
 
 if __name__ == "__main__":
