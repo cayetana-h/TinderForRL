@@ -1,150 +1,239 @@
-# TinderForRL: Matching RL Algorithms to Problems
+# TinderForRL
 
-A comprehensive study of reinforcement learning algorithms on the Mountain Car environment.
-The goal: understand why different algorithms excel under different reward structures.
+A reinforcement learning project about matching the right algorithm to the right environment.
 
-## Project Structure
+The project compares tabular RL and deep RL on Mountain Car variants, focusing on:
+- performance,
+- stability,
+- reward structure,
+- and interpretability.
 
-```
+---
+
+## Project overview
+
+The core idea is simple: the same problem can behave very differently depending on how you define the reward and the action space.
+
+This repo studies:
+- **MountainCar-v0** with discrete Q-learning,
+- **MountainCar-v0** with an action-cost variant,
+- **MountainCarContinuous-v0** with TD3,
+- **MountainCarContinuous-v0** with SAC.
+
+The goal is to compare which approach fits each formulation best.
+
+---
+
+## Repository structure
+
+```text
 TinderForRL/
-├── training/                          # Training scripts
-│   ├── train_qtable_discrete.py      # Discrete Q-learning with velocity shaping
-│   ├── train_continuous_qtable.py    # Continuous Q-learning with action cost penalty
-│   └── train_continuous_deeprl.py    # TD3 & SAC with action intensity cost
-│
-├── agents/                            # RL agent implementations
-│   └── agent_qtable.py               # Q-table agent with tile coding
-│
-├── config/                            # Training configurations
-│   ├── qtable_discrete.yaml          # Discrete Q-learning params
-│   ├── qtable_continuous.yaml        # Continuous Q-learning params
-│   └── deeprl.yaml                   # Deep RL (TD3/SAC) params
-│
-├── analysis/                          # Analysis notebooks & scripts
-│   ├── qtable_discrete_analysis.ipynb      # Discrete results analysis
-│   ├── qtable_continuous_analysis.ipynb    # Continuous results analysis
-│   └── compare_all_approaches.py           # Cross-algorithm comparison
-│
-├── results/                           # Training outputs
-│   ├── models/                        # Saved trained models
-│   ├── metrics/                       # Training metrics (rewards, etc)
-│   └── comparison/                    # Comparison plots
-│
-├── requirements.txt                   # Python dependencies
-├── run_all_training.py               # Master training orchestrator
-└── generate_continuous_plots.py      # Visualization utilities
+├── agents/
+│   └── agent_qtable.py
+├── analysis/
+│   ├── compare_all_approaches.py
+│   ├── qtable_discrete_analysis.ipynb
+│   └── qtable_continuous_analysis.ipynb
+├── config/
+│   ├── deeprl.yaml
+│   ├── qtable_continuous.yaml
+│   └── qtable_discrete.yaml
+├── evaluation/
+│   ├── evaluate_qtable.py
+│   └── evaluate_sb3.py
+├── results/
+│   ├── comparison/
+│   ├── metrics/
+│   └── models/
+├── training/
+│   ├── train_continuous_deeprl.py
+│   ├── train_continuous_qtable.py
+│   ├── train_qtable_discrete.py
+│   ├── train_sac_continuous.py
+│   └── train_td3_continuous.py
+├── utils/
+│   ├── io.py
+│   ├── metrics.py
+│   └── wrappers.py
+├── generate_continuous_plots.py
+├── run_all_training.py
+├── requirements.txt
+└── README.md
 ```
 
-## Algorithms Implemented
+---
 
-### 1. **Discrete Q-Learning with Tile Coding** (Discrete-v0)
-- **Approach**: Discretize continuous state space into bins, then tabular Q-learning
-- **Key Feature**: Velocity-based reward shaping
-- **Why**: Simple, interpretable, shows the Q-function as a 2D heatmap
-- **Strengths**: Fast training, clear policy visualization
-- **Weaknesses**: State discretization is a design choice; can't scale to high dimensions
+## Implemented approaches
 
-### 2. **Continuous Q-Learning with Action Cost** (Discrete-v0 + wrapper)
-- **Approach**: Same Q-table, but add cost for non-neutral actions
-- **Reward**: r = -1/step - 0.1 × (1 if action ≠ neutral else 0)
-- **Why**: Tests how reward shaping affects learned policy
-- **Strengths**: Shows exploration-exploitation tradeoff
-- **Weaknesses**: Action discretization (only 3 actions)
+### 1) Discrete Q-learning
+File: `training/train_qtable_discrete.py`
 
-### 3. **TD3 with Action Intensity Cost** (Continuous-v0)
-- **Approach**: Deep deterministic policy gradient with twin networks
-- **Reward**: r = -0.1 × action² (standard continuous control penalty)
-- **Why**: Handles continuous action spaces natively
-- **Strengths**: Stable, sample-efficient, learns pure continuous policies
-- **Weaknesses**: Black box, harder to interpret than Q-tables
+A tabular Q-learning agent trained on `MountainCar-v0` with:
+- state discretization,
+- velocity-based reward shaping,
+- metrics logging,
+- greedy evaluation after training.
 
-### 4. **SAC with Action Intensity Cost** (Continuous-v0)
-- **Approach**: Soft actor-critic with entropy regularization
-- **Reward**: r = -0.1 × action² (same as TD3)
-- **Why**: More stable than TD3, auto-tunes exploration
-- **Strengths**: Natural entropy bonus encourages exploration
-- **Weaknesses**: Stochastic policy makes evaluation harder
+This version is the most interpretable and the easiest to visualize.
 
-## Quick Start
+### 2) Q-learning with action cost
+File: `training/train_continuous_qtable.py`
 
-### 1. Install dependencies
+A discrete-action variant on `MountainCar-v0` where non-neutral actions incur an extra cost.
+
+This setup is useful to study how reward shaping changes the learned policy even when the algorithm stays the same.
+
+### 3) TD3 on continuous Mountain Car
+File: `training/train_td3_continuous.py`
+
+TD3 is trained on `MountainCarContinuous-v0` for the continuous-control version of the task.
+
+### 4) SAC on continuous Mountain Car
+File: `training/train_sac_continuous.py`
+
+SAC is trained on the same continuous-control task and compared with TD3.
+
+### 5) Combined deep RL launcher
+File: `training/train_continuous_deeprl.py`
+
+This script runs the TD3 and SAC training sequence.
+
+---
+
+## Evaluation and comparison
+
+The repo includes dedicated scripts for evaluation and comparison:
+
+- `evaluation/evaluate_qtable.py`
+- `evaluation/evaluate_sb3.py`
+- `analysis/compare_all_approaches.py`
+- `generate_continuous_plots.py`
+
+These scripts are used to:
+- evaluate trained agents,
+- save summary metrics,
+- generate comparison plots,
+- and aggregate results into a common format.
+
+---
+
+## Installation
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Run all training
+---
+
+## Run everything
+
 ```bash
 python run_all_training.py
 ```
 
 This will:
-- Train discrete Q-learning
-- Train continuous Q-learning  
-- Train TD3 and SAC
-- Generate comparison plots
-- Print summary metrics
+- train the discrete Q-learning agent,
+- train the action-cost Q-learning variant,
+- train TD3 and SAC,
+- evaluate the trained models,
+- generate comparison plots,
+- and save summary metrics.
 
-Or run individual scripts:
+---
 
+## Run individual scripts
+
+### Discrete Q-learning
 ```bash
-# Discrete Q-learning only
 python training/train_qtable_discrete.py
+```
 
-# Continuous Q-learning only
+### Q-learning with action cost
+```bash
 python training/train_continuous_qtable.py
+```
 
-# Deep RL only
+### Deep RL launcher
+```bash
 python training/train_continuous_deeprl.py
+```
 
-# Analysis & comparison
+### Comparison script
+```bash
 python analysis/compare_all_approaches.py
 ```
 
-### 3. Analysis
-Open the Jupyter notebooks:
+### Plot generation
 ```bash
-jupyter notebook analysis/qtable_discrete_analysis.ipynb
-jupyter notebook analysis/qtable_continuous_analysis.ipynb
+python generate_continuous_plots.py
 ```
 
-## Key Results
+---
 
-Run the comparison script to see metrics like:
-- **Success Rate**: % of episodes that reach the goal
-- **Average Steps**: Convergence speed
-- **Action Efficiency**: For continuous: total action cost incurred
+## Outputs
 
-## Why This Project Matters
+The main outputs are saved under `results/`:
 
-This assignment teaches:
+- `results/models/` for trained models
+- `results/metrics/` for per-episode metrics and summaries
+- `results/comparison/` for plots and comparison tables
 
-1. **Algorithm Selection is Critical**
-   - Different state/action spaces demand different approaches
-   - Discrete states → Q-table (simple, fast)
-   - Continuous states → Neural nets or discretization
-   - Discrete actions → Value-based (DQN, Q-learning)
-   - Continuous actions → Policy gradients or Actor-Critic (TD3, SAC, PPO)
+---
 
-2. **Reward Shaping is an Art**
-   - Same environment, different reward → different behaviors
-   - Velocity shaping vs position shaping vs action cost
-   - Trade-offs: exploration speed vs sample efficiency
+## What the analysis should compare
 
-3. **Interpretability vs Power**
-   - Q-tables let you visualize the entire learned policy
-   - Deep RL scales but becomes opaque
-   - No one-size-fits-all solution
+For each approach, the most useful metrics are:
 
-## Next Steps
+- success rate,
+- average reward,
+- average steps to solve,
+- action cost,
+- training stability,
+- and interpretability.
 
-- [ ] Implement policy visualization for deep RL agents
-- [ ] Add ablation studies (remove shaping, change hyperparameters)
-- [ ] Implement PPO for continuous as alternative to TD3/SAC
-- [ ] Part 02: Find and analyze impressive RL paper
+The main question is not just “does it solve the task?”, but:
+- how efficiently it solves it,
+- how stable learning is,
+- and how the learned policy changes with reward structure.
 
-## References
+---
 
-- Sutton & Barto, Reinforcement Learning: An Introduction
-- OpenAI Spinning Up: [https://spinningup.openai.com](https://spinningup.openai.com)
-- TD3 Paper: [Addressing Function Approximation Error in Actor-Critic Methods](https://arxiv.org/abs/1802.09477)
-- SAC Paper: [Soft Actor-Critic: Off-Policy Deep Reinforcement Learning with a Stochastic Actor](https://arxiv.org/abs/1801.01290)
+## Design notes
+
+This project intentionally compares:
+- tabular RL vs deep RL,
+- discrete vs continuous control,
+- shaped reward vs standard reward,
+- interpretability vs performance.
+
+That is why different algorithms are used for different formulations instead of forcing one method everywhere.
+
+---
+
+## Dependencies
+
+Main libraries used in the project:
+
+- `gymnasium`
+- `numpy`
+- `matplotlib`
+- `stable-baselines3`
+- `torch`
+- `pyyaml`
+
+---
+
+## Notes
+
+The continuous-control scripts use the standard `MountainCarContinuous-v0` environment.
+
+The discrete action-cost variant remains a discrete-action setup on `MountainCar-v0`, but with an extra penalty for non-neutral actions.
+
+---
+
+## Next steps
+
+- Add multi-seed evaluation.
+- Add confidence intervals.
+- Extend the comparison tables.
+- Prepare the final written report.
