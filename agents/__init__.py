@@ -1,1 +1,1 @@
-from . import scripts
+"""RL agents package."""

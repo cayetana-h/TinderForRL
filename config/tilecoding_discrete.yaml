@@ -1,0 +1,12 @@
+# Configuration for tile coding agent
+num_tilings: 8
+tiles_per_dim: [8, 8]
+learning_rate: 0.01
+gamma: 0.99
+epsilon_start: 1.0
+epsilon_end: 0.01
+epsilon_decay: 0.9995
+num_episodes: 10000
+max_steps: 500
+use_reward_shaping: true
+shaping_scale: 300.0
