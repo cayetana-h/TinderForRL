@@ -4,6 +4,7 @@ import yaml
 import os
 import sys
 import importlib.util
+from torch.utils.tensorboard import SummaryWriter
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 AGENT_PATH  = os.path.abspath(os.path.join(CURRENT_DIR, "..", "agents", "agent_qtable.py"))
@@ -61,6 +62,9 @@ def train():
     shaped_rewards = []
     successes      = 0
 
+    # TensorBoard logging
+    writer = SummaryWriter(log_dir="runs/qtable_discrete")
+
     for episode in range(config["num_episodes"]):
         obs, _ = env.reset()
         state = agent.discretize_state(obs)
@@ -97,6 +101,12 @@ def train():
         raw_rewards.append(total_raw)
         shaped_rewards.append(total_shaped)
 
+        # Log to TensorBoard
+        writer.add_scalar("Reward/raw", total_raw, episode)
+        writer.add_scalar("Reward/shaped", total_shaped, episode)
+        writer.add_scalar("Metrics/steps", step, episode)
+        writer.add_scalar("Metrics/epsilon", agent.epsilon, episode)
+
         if episode % 500 == 0:
             recent_raw = raw_rewards[-100:] if episode >= 100 else raw_rewards
             print(
@@ -122,6 +132,9 @@ def train():
                     if trunc:
                         break
             print(f"  → Greedy eval: {eval_wins}/20")
+            writer.add_scalar("Evaluation/greedy_wins", eval_wins, episode)
+
+    writer.close()
 
     os.makedirs("../results/models",  exist_ok=True)
     os.makedirs("../results/metrics", exist_ok=True)
@@ -132,6 +145,7 @@ def train():
 
     print(f"\nDone. Successes: {successes}/{config['num_episodes']}")
     print(f"Q-table: {agent.q_table.shape} | Max Q: {np.max(agent.q_table):.4f}")
+    print(f"TensorBoard logs saved to: runs/qtable_discrete")
 
 
 if __name__ == "__main__":
