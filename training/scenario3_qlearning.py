@@ -1,249 +1,137 @@
-"""
-Scenario 3: Discrete MountainCar, Minimum Fuel (Adapted)
-
-Environment: MountainCar-v0 + DiscreteActionCostWrapper
-Reward: -1 per step + penalty for non-neutral actions (left/right)
-Goal: Reach the goal with minimum "fuel" (non-neutral actions)
-
-Algorithm: Q-learning (tabular)
-"""
-
-from __future__ import annotations
-from pathlib import Path
-from typing import Any
 import gymnasium as gym
 import numpy as np
-import json
+import matplotlib.pyplot as plt
 
-
-# ============================================================================
-# DISCRETE ACTION COST WRAPPER
-# ============================================================================
 
 class DiscreteActionCostWrapper(gym.Wrapper):
-    """
-    Wrapper for MountainCar-v0 that adds penalty for non-neutral actions.
-    
-    Actions:
-        0 -> push left (costs fuel)
-        1 -> no push (neutral, no fuel cost)
-        2 -> push right (costs fuel)
-    """
-
-    def __init__(self, env: gym.Env, cost_coefficient: float = 0.1):
+    def __init__(self, env, action_cost=0.001, goal_bonus=100):
         super().__init__(env)
-        self.cost_coefficient = float(cost_coefficient)
+        self.action_cost = action_cost
+        self.goal_bonus = goal_bonus
         self.neutral_action = 1
+        self.prev_pos = None
 
-    def step(self, action: Any):
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        self.prev_pos = obs[0]
+        return obs, info
+
+    def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
-        
-        # Add penalty if not neutral
-        action_int = int(action)
-        extra_cost = self.cost_coefficient if action_int != self.neutral_action else 0.0
-        shaped_reward = float(reward) - extra_cost
-        
-        info = dict(info)
-        info["extra_action_cost"] = extra_cost
-        info["raw_reward"] = float(reward)
-        
-        return obs, shaped_reward, terminated, truncated, info
+
+        pos, vel = obs
+        progress = pos - self.prev_pos
+
+        reward = -1.0
+        reward += 100.0 * progress
+        reward += 10.0 * abs(vel)
+
+        if action != self.neutral_action:
+            reward -= self.action_cost
+
+        if terminated:
+            reward += self.goal_bonus
+
+        self.prev_pos = pos
+
+        return obs, reward, terminated, truncated, info
 
 
-# ============================================================================
-# Q-TABLE AGENT CLASS
-# ============================================================================
+env = DiscreteActionCostWrapper(gym.make("MountainCar-v0"))
 
-class QTableAgent:
-    """Tabular Q-learning agent"""
-    
-    def __init__(
-        self,
-        state_low,
-        state_high,
-        num_bins,
-        num_actions,
-        learning_rate=0.2,
-        gamma=0.99,
-        epsilon_start=1.0,
-        epsilon_end=0.01,
-        epsilon_decay=0.9998,
-    ):
-        self.num_bins = np.array(num_bins, dtype=int)
-        self.num_actions = int(num_actions)
-        self.lr = float(learning_rate)
-        self.gamma = float(gamma)
-        self.epsilon = float(epsilon_start)
-        self.epsilon_end = float(epsilon_end)
-        self.epsilon_decay = float(epsilon_decay)
+episodes = 30000
+max_steps = 200
 
-        self.state_low = np.array(state_low, dtype=float)
-        self.state_high = np.array(state_high, dtype=float)
+bins = [30, 30]
+alpha = 0.2
+gamma = 0.99
 
-        self.q_table = np.zeros(tuple(self.num_bins) + (self.num_actions,), dtype=np.float32)
-        self.bin_width = np.maximum((self.state_high - self.state_low) / self.num_bins, 1e-12)
+epsilon = 1.0
+epsilon_min = 0.01
+epsilon_decay = 0.9997
 
-    def discretize_state(self, state):
-        state = np.asarray(state, dtype=float)
-        indices = (state - self.state_low) / self.bin_width
-        indices = np.clip(indices.astype(int), 0, self.num_bins - 1)
-        return tuple(indices)
+q_table = np.zeros((bins[0], bins[1], env.action_space.n))
 
-    def select_action(self, state):
-        if np.random.random() < self.epsilon:
-            return int(np.random.randint(self.num_actions))
-        return int(np.argmax(self.q_table[state]))
-
-    def greedy_action(self, state):
-        return int(np.argmax(self.q_table[state]))
-
-    def update(self, state, action, reward, next_state, done):
-        best_next = np.max(self.q_table[next_state])
-        target = float(reward) + (0.0 if done else self.gamma * best_next)
-        idx = state + (int(action),)
-        self.q_table[idx] += self.lr * (target - self.q_table[idx])
-
-    def decay_epsilon(self):
-        self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
-
-    def save(self, path):
-        np.save(path, self.q_table)
+state_low = env.observation_space.low
+state_high = env.observation_space.high
 
 
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-def ensure_dir(path):
-    """Create directory if it doesn't exist"""
-    path = Path(path)
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+def discretize(obs):
+    ratios = (obs - state_low) / (state_high - state_low)
+    indices = (ratios * np.array(bins)).astype(int)
+    return tuple(np.clip(indices, 0, np.array(bins) - 1))
 
 
-# ============================================================================
-# TRAINING
-# ============================================================================
+rewards = []
+fuel_usage = []
+successes = []
 
-def train():
-    # Configuration
-    SEED = 42
-    NUM_BINS = [20, 20]
-    NUM_EPISODES = 10000
-    MAX_STEPS = 200
-    LEARNING_RATE = 0.2
-    GAMMA = 0.99
-    EPSILON_START = 1.0
-    EPSILON_END = 0.01
-    EPSILON_DECAY = 0.9998
-    COST_COEFFICIENT = 0.1  # Penalty for non-neutral actions
-    
-    np.random.seed(SEED)
-    
-    # Create environment with wrapper
-    base_env = gym.make("MountainCar-v0")
-    env = DiscreteActionCostWrapper(base_env, cost_coefficient=COST_COEFFICIENT)
-    
-    # Create agent
-    agent = QTableAgent(
-        state_low=env.observation_space.low,
-        state_high=env.observation_space.high,
-        num_bins=NUM_BINS,
-        num_actions=env.action_space.n,
-        learning_rate=LEARNING_RATE,
-        gamma=GAMMA,
-        epsilon_start=EPSILON_START,
-        epsilon_end=EPSILON_END,
-        epsilon_decay=EPSILON_DECAY,
-    )
-    
-    # Training metrics
-    rewards = []
-    steps_list = []
-    action_costs = []
-    successes = []
-    
-    print("=" * 60)
-    print("SCENARIO 3: Discrete MountainCar - Min Fuel (Q-learning)")
-    print("=" * 60)
-    
-    for episode in range(NUM_EPISODES):
-        obs, _ = env.reset(seed=SEED + episode)
-        state = agent.discretize_state(obs)
-        
-        total_reward = 0.0
-        total_cost = 0.0
-        terminated = False
-        
-        for step_count in range(1, MAX_STEPS + 1):
-            action = agent.select_action(state)
-            obs_next, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
-            
-            next_state = agent.discretize_state(obs_next)
-            agent.update(state, action, reward, next_state, done)
-            
-            obs = obs_next
-            state = next_state
-            total_reward += reward
-            total_cost += info.get("extra_action_cost", 0.0)
-            
-            if done:
-                break
-        
-        rewards.append(total_reward)
-        steps_list.append(step_count)
-        action_costs.append(total_cost)
-        successes.append(bool(terminated))
-        
-        agent.decay_epsilon()
-        
-        if episode % 500 == 0:
-            recent = rewards[-100:] if len(rewards) >= 100 else rewards
-            recent_costs = action_costs[-100:] if len(action_costs) >= 100 else action_costs
-            print(
-                f"Ep {episode:5d} | "
-                f"Avg reward (last 100): {np.mean(recent):8.2f} | "
-                f"Avg cost: {np.mean(recent_costs):5.2f} | "
-                f"Epsilon: {agent.epsilon:.4f} | "
-                f"Successes: {sum(successes)}"
-            )
-    
-    # Save results
-    results_dir = ensure_dir("results/models")
-    metrics_dir = ensure_dir("results/metrics/scenario3_qlearning")
-    
-    agent.save(results_dir / "scenario3_qlearning.npy")
-    np.save(metrics_dir / "rewards.npy", np.array(rewards, dtype=np.float32))
-    np.save(metrics_dir / "steps.npy", np.array(steps_list, dtype=np.int32))
-    np.save(metrics_dir / "action_costs.npy", np.array(action_costs, dtype=np.float32))
-    
-    # Save summary
-    summary = {
-        "algorithm": "Q-learning",
-        "scenario": "Scenario 3 - Discrete, Min Fuel",
-        "num_episodes": NUM_EPISODES,
-        "mean_reward": float(np.mean(rewards)),
-        "mean_steps": float(np.mean(steps_list)),
-        "mean_action_cost": float(np.mean(action_costs)),
-        "success_rate": float(sum(successes) / len(successes)),
-        "final_epsilon": float(agent.epsilon),
-    }
-    
-    with open(metrics_dir / "summary.json", "w") as f:
-        json.dump(summary, f, indent=2)
-    
-    print("\n" + "=" * 60)
-    print(f"Training complete!")
-    print(f"Success rate: {summary['success_rate']:.2%}")
-    print(f"Mean reward: {summary['mean_reward']:.2f}")
-    print(f"Mean steps: {summary['mean_steps']:.2f}")
-    print(f"Mean action cost: {summary['mean_action_cost']:.2f}")
-    print(f"Results saved to {metrics_dir}")
-    print("=" * 60)
-    
-    env.close()
+for ep in range(episodes):
+    obs, _ = env.reset()
+    state = discretize(obs)
+
+    total_reward = 0
+    fuel = 0
+    success = False
+
+    for step in range(max_steps):
+        if np.random.random() < epsilon:
+            action = env.action_space.sample()
+        else:
+            action = np.argmax(q_table[state])
+
+        next_obs, reward, terminated, truncated, info = env.step(action)
+        next_state = discretize(next_obs)
+
+        if action != 1:
+            fuel += 1
+
+        if terminated:
+            target = reward
+            success = True
+        else:
+            target = reward + gamma * np.max(q_table[next_state])
+
+        q_table[state][action] += alpha * (target - q_table[state][action])
+
+        state = next_state
+        total_reward += reward
+
+        if terminated or truncated:
+            break
+
+    epsilon = max(epsilon_min, epsilon * epsilon_decay)
+
+    rewards.append(total_reward)
+    fuel_usage.append(fuel)
+    successes.append(success)
+
+    if ep % 1000 == 0:
+        recent_success = np.mean(successes[-1000:]) if len(successes) >= 1000 else np.mean(successes)
+        print(
+            f"Episode {ep} | Reward: {total_reward:.2f} | "
+            f"Fuel: {fuel} | Success: {success} | "
+            f"Recent success: {recent_success:.2%} | Epsilon: {epsilon:.3f}"
+        )
 
 
-if __name__ == "__main__":
-    train()
+np.save("scenario3_qlearning_min_fuel_qtable.npy", q_table)
+np.save("scenario3_qlearning_rewards.npy", np.array(rewards))
+np.save("scenario3_qlearning_fuel.npy", np.array(fuel_usage))
+
+print("\nFinal results:")
+print(f"Success rate last 1000 episodes: {np.mean(successes[-1000:]):.2%}")
+print(f"Average fuel last 1000 episodes: {np.mean(fuel_usage[-1000:]):.2f}")
+print(f"Average reward last 1000 episodes: {np.mean(rewards[-1000:]):.2f}")
+
+plt.plot(rewards)
+plt.title("Scenario 3 Q-learning Rewards")
+plt.xlabel("Episode")
+plt.ylabel("Reward")
+plt.show()
+
+plt.plot(fuel_usage)
+plt.title("Scenario 3 Q-learning Fuel Usage")
+plt.xlabel("Episode")
+plt.ylabel("Non-neutral Actions")
+plt.show()

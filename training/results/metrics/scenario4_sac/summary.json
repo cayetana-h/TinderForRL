@@ -1,0 +1,9 @@
+{
+  "algorithm": "SAC",
+  "scenario": "Scenario 4 - Continuous, Min Steps (Linear)",
+  "total_timesteps": 100000,
+  "num_episodes": 4955050,
+  "mean_reward": -22.304594039916992,
+  "mean_steps": 999.0,
+  "success_rate": 0.0
+}
