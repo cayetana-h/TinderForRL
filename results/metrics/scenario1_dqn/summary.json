@@ -1,0 +1,9 @@
+{
+  "algorithm": "DQN",
+  "scenario": "Scenario 1 - Discrete, Min Steps",
+  "total_timesteps": 500000,
+  "num_episodes": 3505,
+  "mean_reward": -142.62339782714844,
+  "mean_steps": 142.623395149786,
+  "success_rate": 0.7338088445078459
+}

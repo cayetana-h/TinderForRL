@@ -38,10 +38,13 @@ class MetricsCallback(BaseCallback):
         self.episode_lengths = []
     
     def _on_step(self) -> bool:
-        if len(self.model.ep_info_buffer) > 0:
-            for info in self.model.ep_info_buffer:
-                self.episode_rewards.append(info['r'])
-                self.episode_lengths.append(info['l'])
+        # Check if episode just finished
+        if self.locals.get("dones")[0]:
+            # Get info from the completed episode
+            info = self.locals.get("infos")[0]
+            if "episode" in info:
+                self.episode_rewards.append(info["episode"]["r"])
+                self.episode_lengths.append(info["episode"]["l"])
         return True
 
 
@@ -52,7 +55,7 @@ class MetricsCallback(BaseCallback):
 def train():
     # Configuration
     SEED = 42
-    TOTAL_TIMESTEPS = 100000
+    TOTAL_TIMESTEPS = 500000
     LEARNING_RATE = 0.001
     BUFFER_SIZE = 50000
     LEARNING_STARTS = 1000
