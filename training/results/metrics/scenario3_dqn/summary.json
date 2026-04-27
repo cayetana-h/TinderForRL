@@ -1,0 +1,9 @@
+{
+  "algorithm": "DQN",
+  "scenario": "Scenario 3 - Discrete, Min Fuel (Shaped Rewards)",
+  "total_timesteps": 500000,
+  "num_episodes": 2906,
+  "mean_reward": -29.659448623657227,
+  "mean_steps": 172.01686166551963,
+  "success_rate": 0.5502408809359945
+}
