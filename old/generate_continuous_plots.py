@@ -5,7 +5,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils.io import ensure_dir, load_json
+from old.utils.io import ensure_dir, load_json
 
 
 ROOT = Path(__file__).resolve().parent

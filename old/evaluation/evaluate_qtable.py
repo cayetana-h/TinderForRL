@@ -6,9 +6,9 @@ from pathlib import Path
 import gymnasium as gym
 import numpy as np
 
-from agents.agent_qtable import QTableAgent
-from utils.io import ensure_dir, load_yaml, save_csv_rows, save_json
-from utils.metrics import summarize_episodes
+from old.agents.agent_qtable import QTableAgent
+from old.utils.io import ensure_dir, load_yaml, save_csv_rows, save_json
+from old.utils.metrics import summarize_episodes
 
 
 ROOT = Path(__file__).resolve().parents[1]

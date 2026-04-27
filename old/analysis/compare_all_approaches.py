@@ -5,7 +5,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils.io import ensure_dir, load_json, save_csv_rows
+from old.utils.io import ensure_dir, load_json, save_csv_rows
 
 ROOT = Path(__file__).resolve().parents[1]
 

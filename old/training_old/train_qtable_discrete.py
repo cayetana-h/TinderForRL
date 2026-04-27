@@ -6,36 +6,28 @@ from pathlib import Path
 import gymnasium as gym
 import numpy as np
 
-from agents.agent_qtable import QTableAgent
-from utils.io import ensure_dir, load_yaml, save_csv_rows, save_json
-from utils.metrics import rolling_mean, summarize_episodes
-from utils.wrappers import DiscreteActionCostWrapper
+from old.agents.agent_qtable import QTableAgent
+from old.utils.io import ensure_dir, load_yaml, save_csv_rows, save_json
+from old.utils.metrics import rolling_mean, summarize_episodes
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def shape_reward(obs, obs_next, gamma, scale):
     """
-    Potential-based shaping using position.
-    This keeps the reward shaping simple and interpretable.
+    Potential-based shaping using velocity magnitude.
     """
-    phi_current = float(obs[0])
-    phi_next = float(obs_next[0])
+    phi_current = abs(float(obs[1]))
+    phi_next = abs(float(obs_next[1]))
     return scale * (gamma * phi_next - phi_current)
 
 
-def train(config_path: str | Path = ROOT / "config" / "qtable_continuous.yaml"):
+def train(config_path: str | Path = ROOT / "config" / "qtable_discrete.yaml"):
     config = load_yaml(config_path)
     seed = int(config.get("seed", 42))
     np.random.seed(seed)
 
-    base_env = gym.make("MountainCar-v0")
-    env = DiscreteActionCostWrapper(
-        base_env,
-        cost_coefficient=float(config.get("cost_coefficient", 0.1)),
-        neutral_action=1,
-    )
-
+    env = gym.make("MountainCar-v0")
     agent = QTableAgent(
         state_low=env.observation_space.low,
         state_high=env.observation_space.high,
@@ -48,8 +40,8 @@ def train(config_path: str | Path = ROOT / "config" / "qtable_continuous.yaml"):
         epsilon_decay=config["epsilon_decay"],
     )
 
-    use_shaping = bool(config.get("use_reward_shaping", False))
-    shaping_scale = float(config.get("shaping_scale", 1000.0))
+    use_shaping = bool(config.get("use_reward_shaping", True))
+    shaping_scale = float(config.get("shaping_scale", 300.0))
     num_episodes = int(config["num_episodes"])
     max_steps = int(config["max_steps"])
     eval_episodes = int(config.get("eval_episodes", 20))
@@ -72,13 +64,11 @@ def train(config_path: str | Path = ROOT / "config" / "qtable_continuous.yaml"):
 
         for step_count in range(1, max_steps + 1):
             action = agent.select_action(state)
-            obs_next, reward, terminated, truncated, info = env.step(action)
+            obs_next, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
 
             raw_reward = float(reward)
             shaped_reward = raw_reward
-            extra_cost = float(info.get("extra_action_cost", 0.0))
-            total_cost += extra_cost
 
             if use_shaping and not terminated:
                 shaped_reward = raw_reward + shape_reward(obs, obs_next, agent.gamma, shaping_scale)
@@ -101,13 +91,13 @@ def train(config_path: str | Path = ROOT / "config" / "qtable_continuous.yaml"):
             if done:
                 break
 
-        agent.decay_epsilon()
-
         rewards.append(total_reward)
         shaped_rewards.append(total_shaped)
         steps_list.append(step_count)
         costs.append(total_cost)
         successes.append(bool(terminated))
+
+        agent.decay_epsilon()
 
         if episode % 500 == 0:
             recent = rewards[-100:] if len(rewards) >= 100 else rewards
@@ -115,28 +105,27 @@ def train(config_path: str | Path = ROOT / "config" / "qtable_continuous.yaml"):
                 f"Ep {episode:5d} | "
                 f"raw avg(last 100): {np.mean(recent):8.2f} | "
                 f"epsilon: {agent.epsilon:.4f} | "
-                f"successes: {sum(successes)} | "
-                f"cost: {total_cost:.2f}"
+                f"successes: {sum(successes)}"
             )
 
     model_dir = ensure_dir(ROOT / "results" / "models")
-    metrics_dir = ensure_dir(ROOT / "results" / "metrics" / "qtable_action_cost")
+    metrics_dir = ensure_dir(ROOT / "results" / "metrics" / "qtable_discrete")
     comparison_dir = ensure_dir(ROOT / "results" / "comparison")
 
-    agent.save(model_dir / "qtable_action_cost.npy")
+    agent.save(model_dir / "qtable_discrete.npy")
 
     rows = []
-    for i, (r, sr, s, c, succ) in enumerate(
+    for i, (raw_r, shaped_r, steps, cost, succ) in enumerate(
         zip(rewards, shaped_rewards, steps_list, costs, successes),
         start=1,
     ):
         rows.append(
             {
                 "episode": i,
-                "raw_reward": r,
-                "shaped_reward": sr,
-                "steps": s,
-                "cost": c,
+                "raw_reward": raw_r,
+                "shaped_reward": shaped_r,
+                "steps": steps,
+                "cost": cost,
                 "success": int(succ),
                 "epsilon": float(agent.epsilon),
             }
@@ -151,12 +140,11 @@ def train(config_path: str | Path = ROOT / "config" / "qtable_continuous.yaml"):
 
     rm = rolling_mean(rewards, 100)
     if rm.size:
-        np.save(comparison_dir / "qtable_action_cost_rolling_mean.npy", rm)
+        np.save(comparison_dir / "qtable_discrete_rolling_mean.npy", rm)
 
     print(f"Training done. Successes: {sum(successes)}/{num_episodes}")
     print(f"Q-table shape: {agent.q_table.shape} | Max Q: {np.max(agent.q_table):.4f}")
 
-    # Greedy evaluation
     greedy_agent = QTableAgent(
         state_low=env.observation_space.low,
         state_high=env.observation_space.high,
@@ -187,7 +175,7 @@ def train(config_path: str | Path = ROOT / "config" / "qtable_continuous.yaml"):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default=str(ROOT / "config" / "qtable_continuous.yaml"))
+    parser.add_argument("--config", type=str, default=str(ROOT / "config" / "qtable_discrete.yaml"))
     args = parser.parse_args()
     train(args.config)
 
