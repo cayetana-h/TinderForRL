@@ -1,210 +1,394 @@
 """
-Scenario 1: Discrete MountainCar, Minimum Steps (Standard)
+Scenario 1: Discrete MountainCar, Minimum Steps
 
 Environment: MountainCar-v0
-Reward: -1 per step (standard)
-Goal: Reach the goal as quickly as possible
+Objective: Reach the goal as quickly as possible
+Algorithm: Q-learning with Q-table
+Reward: Default Gym reward (-1 per step)
 
-Algorithm: Q-learning (tabular)
+Outputs saved:
+- results/models/scenario1_qtable.pkl
+- results/metrics/scenario1_qtable.json
+- results/plots/scenario1_qtable_training.png
 """
 
-from __future__ import annotations
-from pathlib import Path
 import gymnasium as gym
 import numpy as np
+import matplotlib.pyplot as plt
+import pickle
 import json
+import time
+from pathlib import Path
 
 
-# ============================================================================
-# Q-TABLE AGENT CLASS
-# ============================================================================
+# ============================================================
+# CONFIG
+# ============================================================
 
-class QTableAgent:
-    """Tabular Q-learning agent"""
-    
-    def __init__(
-        self,
-        state_low,
-        state_high,
-        num_bins,
-        num_actions,
-        learning_rate=0.2,
-        gamma=0.99,
-        epsilon_start=1.0,
-        epsilon_end=0.01,
-        epsilon_decay=0.9998,
-    ):
-        self.num_bins = np.array(num_bins, dtype=int)
-        self.num_actions = int(num_actions)
-        self.lr = float(learning_rate)
-        self.gamma = float(gamma)
-        self.epsilon = float(epsilon_start)
-        self.epsilon_end = float(epsilon_end)
-        self.epsilon_decay = float(epsilon_decay)
+SCENARIO = 1
+ALGORITHM = "Q-table"
+ENV_NAME = "MountainCar-v0"
+OBJECTIVE = "minimum_steps"
 
-        self.state_low = np.array(state_low, dtype=float)
-        self.state_high = np.array(state_high, dtype=float)
+TRAIN_EPISODES = 25000
+EVAL_EPISODES = 100
 
-        self.q_table = np.zeros(tuple(self.num_bins) + (self.num_actions,), dtype=np.float32)
-        self.bin_width = np.maximum((self.state_high - self.state_low) / self.num_bins, 1e-12)
+POSITION_BINS = 40
+VELOCITY_BINS = 40
 
-    def discretize_state(self, state):
-        state = np.asarray(state, dtype=float)
-        indices = (state - self.state_low) / self.bin_width
-        indices = np.clip(indices.astype(int), 0, self.num_bins - 1)
-        return tuple(indices)
+LEARNING_RATE = 0.1
+DISCOUNT_FACTOR = 0.99
 
-    def select_action(self, state):
-        if np.random.random() < self.epsilon:
-            return int(np.random.randint(self.num_actions))
-        return int(np.argmax(self.q_table[state]))
+EPSILON_START = 1.0
+EPSILON_MIN = 0.02
+EPSILON_DECAY = 0.9997
 
-    def greedy_action(self, state):
-        return int(np.argmax(self.q_table[state]))
+MAX_STEPS = 200
 
-    def update(self, state, action, reward, next_state, done):
-        best_next = np.max(self.q_table[next_state])
-        target = float(reward) + (0.0 if done else self.gamma * best_next)
-        idx = state + (int(action),)
-        self.q_table[idx] += self.lr * (target - self.q_table[idx])
-
-    def decay_epsilon(self):
-        self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
-
-    def save(self, path):
-        np.save(path, self.q_table)
+RESULTS_DIR = Path("results")
+METRICS_DIR = RESULTS_DIR / "metrics"
+MODELS_DIR = RESULTS_DIR / "models"
+PLOTS_DIR = RESULTS_DIR / "plots"
 
 
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
+# ============================================================
+# SETUP
+# ============================================================
 
-def ensure_dir(path):
-    """Create directory if it doesn't exist"""
-    path = Path(path)
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def rolling_mean(data, window):
-    """Calculate rolling mean"""
-    if len(data) < window:
-        return np.array([])
-    return np.convolve(data, np.ones(window) / window, mode='valid')
+def create_dirs():
+    METRICS_DIR.mkdir(parents=True, exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# ============================================================================
+def discretize_state(state, position_bins, velocity_bins):
+    position = state[0]
+    velocity = state[1]
+
+    position_index = np.digitize(position, position_bins) - 1
+    velocity_index = np.digitize(velocity, velocity_bins) - 1
+
+    position_index = np.clip(position_index, 0, POSITION_BINS - 1)
+    velocity_index = np.clip(velocity_index, 0, VELOCITY_BINS - 1)
+
+    return position_index, velocity_index
+
+
+def choose_action(q_table, discrete_state, epsilon, env):
+    if np.random.random() < epsilon:
+        return env.action_space.sample()
+
+    return int(np.argmax(q_table[discrete_state]))
+
+
+# ============================================================
 # TRAINING
-# ============================================================================
+# ============================================================
 
-def train():
-    # Configuration
-    SEED = 42
-    NUM_BINS = [20, 20]
-    NUM_EPISODES = 10000
-    MAX_STEPS = 200
-    LEARNING_RATE = 0.2
-    GAMMA = 0.99
-    EPSILON_START = 1.0
-    EPSILON_END = 0.01
-    EPSILON_DECAY = 0.9998
-    
-    np.random.seed(SEED)
-    
-    # Create environment
-    env = gym.make("MountainCar-v0")
-    
-    # Create agent
-    agent = QTableAgent(
-        state_low=env.observation_space.low,
-        state_high=env.observation_space.high,
-        num_bins=NUM_BINS,
-        num_actions=env.action_space.n,
-        learning_rate=LEARNING_RATE,
-        gamma=GAMMA,
-        epsilon_start=EPSILON_START,
-        epsilon_end=EPSILON_END,
-        epsilon_decay=EPSILON_DECAY,
+def train_qtable():
+    env = gym.make(ENV_NAME)
+
+    position_bins = np.linspace(
+        env.observation_space.low[0],
+        env.observation_space.high[0],
+        POSITION_BINS
     )
-    
-    # Training metrics
+
+    velocity_bins = np.linspace(
+        env.observation_space.low[1],
+        env.observation_space.high[1],
+        VELOCITY_BINS
+    )
+
+    q_table = np.zeros((POSITION_BINS, VELOCITY_BINS, env.action_space.n))
+
+    episode_rewards = []
+    episode_steps = []
+    success_history = []
+
+    epsilon = EPSILON_START
+
+    start_time = time.time()
+
+    for episode in range(TRAIN_EPISODES):
+        state, _ = env.reset()
+        discrete_state = discretize_state(state, position_bins, velocity_bins)
+
+        total_reward = 0
+        steps = 0
+        success = False
+
+        for step in range(MAX_STEPS):
+            action = choose_action(q_table, discrete_state, epsilon, env)
+
+            next_state, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
+
+            next_discrete_state = discretize_state(
+                next_state,
+                position_bins,
+                velocity_bins
+            )
+
+            # Give a strong bonus for reaching the goal.
+            # This helps Q-learning learn faster because default MountainCar rewards are sparse.
+            shaped_reward = reward
+            if terminated:
+                shaped_reward = 100
+
+            old_q_value = q_table[discrete_state][action]
+            next_max_q_value = np.max(q_table[next_discrete_state])
+
+            new_q_value = old_q_value + LEARNING_RATE * (
+                shaped_reward + DISCOUNT_FACTOR * next_max_q_value - old_q_value
+            )
+
+            q_table[discrete_state][action] = new_q_value
+
+            discrete_state = next_discrete_state
+            total_reward += reward
+            steps += 1
+
+            if terminated:
+                success = True
+                break
+
+            if done:
+                break
+
+        epsilon = max(EPSILON_MIN, epsilon * EPSILON_DECAY)
+
+        episode_rewards.append(total_reward)
+        episode_steps.append(steps)
+        success_history.append(1 if success else 0)
+
+        if (episode + 1) % 1000 == 0:
+            recent_success = np.mean(success_history[-100:]) * 100
+            recent_steps = np.mean(episode_steps[-100:])
+            recent_reward = np.mean(episode_rewards[-100:])
+
+            print(
+                f"Episode {episode + 1}/{TRAIN_EPISODES} | "
+                f"Success: {recent_success:.1f}% | "
+                f"Avg Steps: {recent_steps:.1f} | "
+                f"Avg Reward: {recent_reward:.1f} | "
+                f"Epsilon: {epsilon:.3f}"
+            )
+
+    training_time = time.time() - start_time
+    env.close()
+
+    return {
+        "q_table": q_table,
+        "position_bins": position_bins,
+        "velocity_bins": velocity_bins,
+        "episode_rewards": episode_rewards,
+        "episode_steps": episode_steps,
+        "success_history": success_history,
+        "training_time": training_time
+    }
+
+
+# ============================================================
+# EVALUATION
+# ============================================================
+
+def evaluate_qtable(q_table, position_bins, velocity_bins):
+    env = gym.make(ENV_NAME)
+
     rewards = []
     steps_list = []
     successes = []
-    
-    print("=" * 60)
-    print("SCENARIO 1: Discrete MountainCar - Minimum Steps (Q-learning)")
-    print("=" * 60)
-    
-    for episode in range(NUM_EPISODES):
-        obs, _ = env.reset(seed=SEED + episode)
-        state = agent.discretize_state(obs)
-        
-        total_reward = 0.0
-        terminated = False
-        
-        for step_count in range(1, MAX_STEPS + 1):
-            action = agent.select_action(state)
-            obs_next, reward, terminated, truncated, _ = env.step(action)
+    fuel_costs = []
+
+    for episode in range(EVAL_EPISODES):
+        state, _ = env.reset()
+        discrete_state = discretize_state(state, position_bins, velocity_bins)
+
+        total_reward = 0
+        steps = 0
+        success = False
+        fuel_cost = 0
+
+        for step in range(MAX_STEPS):
+            action = int(np.argmax(q_table[discrete_state]))
+
+            next_state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
-            
-            next_state = agent.discretize_state(obs_next)
-            agent.update(state, action, reward, next_state, done)
-            
-            obs = obs_next
-            state = next_state
+
+            discrete_state = discretize_state(
+                next_state,
+                position_bins,
+                velocity_bins
+            )
+
             total_reward += reward
-            
+            steps += 1
+
+            # For discrete MountainCar, pushing left/right uses fuel.
+            # Action 1 means no push.
+            if action != 1:
+                fuel_cost += 1
+
+            if terminated:
+                success = True
+                break
+
             if done:
                 break
-        
+
         rewards.append(total_reward)
-        steps_list.append(step_count)
-        successes.append(bool(terminated))
-        
-        agent.decay_epsilon()
-        
-        if episode % 500 == 0:
-            recent = rewards[-100:] if len(rewards) >= 100 else rewards
-            print(
-                f"Ep {episode:5d} | "
-                f"Avg reward (last 100): {np.mean(recent):8.2f} | "
-                f"Epsilon: {agent.epsilon:.4f} | "
-                f"Successes: {sum(successes)}"
-            )
-    
-    # Save results
-    results_dir = ensure_dir("results/models")
-    metrics_dir = ensure_dir("results/metrics/scenario1_qlearning")
-    
-    agent.save(results_dir / "scenario1_qlearning.npy")
-    np.save(metrics_dir / "rewards.npy", np.array(rewards, dtype=np.float32))
-    np.save(metrics_dir / "steps.npy", np.array(steps_list, dtype=np.int32))
-    
-    # Save summary
-    summary = {
-        "algorithm": "Q-learning",
-        "scenario": "Scenario 1 - Discrete, Min Steps",
-        "num_episodes": NUM_EPISODES,
-        "mean_reward": float(np.mean(rewards)),
-        "mean_steps": float(np.mean(steps_list)),
-        "success_rate": float(sum(successes) / len(successes)),
-        "final_epsilon": float(agent.epsilon),
-    }
-    
-    with open(metrics_dir / "summary.json", "w") as f:
-        json.dump(summary, f, indent=2)
-    
-    print("\n" + "=" * 60)
-    print(f"Training complete!")
-    print(f"Success rate: {summary['success_rate']:.2%}")
-    print(f"Mean reward: {summary['mean_reward']:.2f}")
-    print(f"Mean steps: {summary['mean_steps']:.2f}")
-    print(f"Results saved to {metrics_dir}")
-    print("=" * 60)
-    
+        steps_list.append(steps)
+        successes.append(1 if success else 0)
+        fuel_costs.append(fuel_cost)
+
     env.close()
+
+    return {
+        "success_rate": float(np.mean(successes)),
+        "average_reward": float(np.mean(rewards)),
+        "average_steps": float(np.mean(steps_list)),
+        "average_fuel": float(np.mean(fuel_costs)),
+        "min_steps": int(np.min(steps_list)),
+        "max_steps": int(np.max(steps_list))
+    }
+
+
+# ============================================================
+# SAVING
+# ============================================================
+
+def save_model(q_table, position_bins, velocity_bins):
+    model_data = {
+        "q_table": q_table,
+        "position_bins": position_bins,
+        "velocity_bins": velocity_bins
+    }
+
+    model_path = MODELS_DIR / "scenario1_qtable.pkl"
+
+    with open(model_path, "wb") as file:
+        pickle.dump(model_data, file)
+
+    print(f"Model saved to {model_path}")
+
+
+def save_metrics(evaluation_results, training_time):
+    metrics = {
+        "scenario": SCENARIO,
+        "algorithm": ALGORITHM,
+        "environment": ENV_NAME,
+        "objective": OBJECTIVE,
+        "training_episodes": TRAIN_EPISODES,
+        "evaluation_episodes": EVAL_EPISODES,
+        "success_rate": evaluation_results["success_rate"],
+        "success_rate_percent": evaluation_results["success_rate"] * 100,
+        "average_reward": evaluation_results["average_reward"],
+        "average_steps": evaluation_results["average_steps"],
+        "average_fuel": evaluation_results["average_fuel"],
+        "min_steps": evaluation_results["min_steps"],
+        "max_steps": evaluation_results["max_steps"],
+        "training_time_seconds": training_time
+    }
+
+    metrics_path = METRICS_DIR / "scenario1_qtable.json"
+
+    with open(metrics_path, "w") as file:
+        json.dump(metrics, file, indent=4)
+
+    print(f"Metrics saved to {metrics_path}")
+
+
+def save_training_plot(episode_rewards, episode_steps, success_history):
+    window = 100
+
+    rewards_smooth = np.convolve(
+        episode_rewards,
+        np.ones(window) / window,
+        mode="valid"
+    )
+
+    steps_smooth = np.convolve(
+        episode_steps,
+        np.ones(window) / window,
+        mode="valid"
+    )
+
+    success_smooth = np.convolve(
+        success_history,
+        np.ones(window) / window,
+        mode="valid"
+    ) * 100
+
+    plt.figure(figsize=(12, 8))
+
+    plt.subplot(3, 1, 1)
+    plt.plot(rewards_smooth)
+    plt.title("Scenario 1 Q-table Training Performance")
+    plt.ylabel("Average Reward")
+
+    plt.subplot(3, 1, 2)
+    plt.plot(steps_smooth)
+    plt.ylabel("Average Steps")
+
+    plt.subplot(3, 1, 3)
+    plt.plot(success_smooth)
+    plt.ylabel("Success Rate (%)")
+    plt.xlabel("Episode")
+
+    plt.tight_layout()
+
+    plot_path = PLOTS_DIR / "scenario1_qtable_training.png"
+    plt.savefig(plot_path)
+    plt.close()
+
+    print(f"Training plot saved to {plot_path}")
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+    create_dirs()
+
+    print("=" * 60)
+    print("SCENARIO 1: DISCRETE MOUNTAINCAR - MINIMUM STEPS")
+    print("ALGORITHM: Q-TABLE")
+    print("=" * 60)
+
+    training_results = train_qtable()
+
+    q_table = training_results["q_table"]
+    position_bins = training_results["position_bins"]
+    velocity_bins = training_results["velocity_bins"]
+    episode_rewards = training_results["episode_rewards"]
+    episode_steps = training_results["episode_steps"]
+    success_history = training_results["success_history"]
+    training_time = training_results["training_time"]
+
+    print("\nEvaluating trained Q-table...")
+    evaluation_results = evaluate_qtable(
+        q_table,
+        position_bins,
+        velocity_bins
+    )
+
+    print("\nEvaluation Results:")
+    print(f"Success Rate: {evaluation_results['success_rate'] * 100:.2f}%")
+    print(f"Average Reward: {evaluation_results['average_reward']:.2f}")
+    print(f"Average Steps: {evaluation_results['average_steps']:.2f}")
+    print(f"Average Fuel: {evaluation_results['average_fuel']:.2f}")
+    print(f"Min Steps: {evaluation_results['min_steps']}")
+    print(f"Max Steps: {evaluation_results['max_steps']}")
+    print(f"Training Time: {training_time:.2f} seconds")
+
+    save_model(q_table, position_bins, velocity_bins)
+    save_metrics(evaluation_results, training_time)
+    save_training_plot(episode_rewards, episode_steps, success_history)
+
+    print("\nDone.")
 
 
 if __name__ == "__main__":
-    train()
+    main()
