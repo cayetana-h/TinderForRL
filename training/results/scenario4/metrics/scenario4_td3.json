@@ -1,0 +1,16 @@
+{
+    "scenario": 4,
+    "algorithm": "TD3",
+    "environment": "MountainCarContinuous-v0",
+    "objective": "minimum_steps",
+    "total_timesteps": 300000,
+    "evaluation_episodes": 100,
+    "success_rate": 1.0,
+    "success_rate_percent": 100.0,
+    "average_reward": 93.41657105229247,
+    "average_steps": 65.91,
+    "average_fuel": 65.83428947707539,
+    "min_steps": 65,
+    "max_steps": 68,
+    "training_time_seconds": 749.310136795044
+}

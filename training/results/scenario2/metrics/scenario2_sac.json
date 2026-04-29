@@ -1,0 +1,16 @@
+{
+    "scenario": 2,
+    "algorithm": "SAC",
+    "environment": "MountainCarContinuous-v0",
+    "objective": "minimum_fuel",
+    "total_timesteps": 300000,
+    "evaluation_episodes": 100,
+    "success_rate": 0.0,
+    "success_rate_percent": 0.0,
+    "average_reward": -5.01741288703068,
+    "average_steps": 999.0,
+    "average_fuel": 50.17412887030682,
+    "min_steps": 999,
+    "max_steps": 999,
+    "training_time_seconds": 1363.064859867096
+}

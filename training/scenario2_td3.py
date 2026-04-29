@@ -10,9 +10,9 @@ Training uses reward shaping so the agent does not learn to simply stay still.
 Evaluation uses the normal environment to report real performance.
 
 Outputs saved:
-- results/models/scenario2_td3.zip
-- results/metrics/scenario2_td3.json
-- results/plots/scenario2_td3_training.png
+- results/scenario2/models/scenario2_td3.zip
+- results/scenario2/metrics/scenario2_td3.json
+- results/scenario2/plots/scenario2_td3_training.png
 """
 
 from pathlib import Path
@@ -42,7 +42,7 @@ TOTAL_TIMESTEPS = 300_000
 EVAL_EPISODES = 100
 MAX_STEPS = 999
 
-RESULTS_DIR = Path("results")
+RESULTS_DIR = Path("results") / "scenario2"
 METRICS_DIR = RESULTS_DIR / "metrics"
 MODELS_DIR = RESULTS_DIR / "models"
 PLOTS_DIR = RESULTS_DIR / "plots"
@@ -123,7 +123,7 @@ class TrainingCallback(BaseCallback):
 
                     self.episode_rewards.append(reward)
                     self.episode_steps.append(steps)
-                    
+
                     if steps < MAX_STEPS:
                         self.success_count += 1
 
@@ -198,7 +198,6 @@ def train_td3():
 # ============================================================
 
 def evaluate_td3(model):
-    # Important: normal environment, not shaped wrapper.
     env = gym.make(ENV_NAME)
 
     rewards = []
@@ -297,17 +296,8 @@ def save_training_plot(callback):
 
     window = 10
 
-    rewards_smooth = np.convolve(
-        episode_rewards,
-        np.ones(window) / window,
-        mode="valid"
-    )
-
-    steps_smooth = np.convolve(
-        episode_steps,
-        np.ones(window) / window,
-        mode="valid"
-    )
+    rewards_smooth = np.convolve(episode_rewards, np.ones(window) / window, mode="valid")
+    steps_smooth = np.convolve(episode_steps, np.ones(window) / window, mode="valid")
 
     plt.figure(figsize=(12, 6))
 

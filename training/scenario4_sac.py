@@ -14,9 +14,9 @@ Comparison with Scenario 2:
 - Scenario 4: Minimize steps (linear time penalty)
 
 Outputs saved:
-- results/models/scenario4_sac.zip
-- results/metrics/scenario4_sac.json
-- results/plots/scenario4_sac_training.png
+- results/scenario4/models/scenario4_sac.zip
+- results/scenario4/metrics/scenario4_sac.json
+- results/scenario4/plots/scenario4_sac_training.png
 """
 
 from pathlib import Path
@@ -45,7 +45,7 @@ TOTAL_TIMESTEPS = 300_000
 EVAL_EPISODES = 100
 MAX_STEPS = 999
 
-RESULTS_DIR = Path("results")
+RESULTS_DIR = Path("results") / "scenario4"
 METRICS_DIR = RESULTS_DIR / "metrics"
 MODELS_DIR = RESULTS_DIR / "models"
 PLOTS_DIR = RESULTS_DIR / "plots"
@@ -86,7 +86,7 @@ class FastMountainCar(gym.Wrapper):
         progress = position - self.previous_position
         self.step_count += 1
 
-        shaped_reward = 0.0  # Base reward is 0, we will shape it
+        shaped_reward = 0.0
 
         # STRONG progress bonus - we want speed!
         shaped_reward += 25.0 * progress
@@ -95,7 +95,6 @@ class FastMountainCar(gym.Wrapper):
         shaped_reward += 1.0 * abs(velocity)
 
         # Linear time penalty (not squared fuel penalty like Scenario 2)
-        # Each step costs something, encouraging fast solutions
         shaped_reward -= 0.1
 
         # Very strong success bonus
@@ -131,7 +130,7 @@ class TrainingCallback(BaseCallback):
 
                     self.episode_rewards.append(reward)
                     self.episode_steps.append(steps)
-                    
+
                     if steps < MAX_STEPS:
                         self.success_count += 1
 
@@ -172,7 +171,7 @@ def train_sac():
         gamma=0.99,
         train_freq=1,
         gradient_steps=1,
-        ent_coef="auto",  # Auto-tune entropy
+        ent_coef="auto",
         target_update_interval=1,
         policy_kwargs=dict(net_arch=[256, 256]),
         verbose=0,
@@ -197,7 +196,6 @@ def train_sac():
 # ============================================================
 
 def evaluate_sac(model):
-    # Important: normal environment, not shaped wrapper.
     env = gym.make(ENV_NAME)
 
     rewards = []
@@ -296,17 +294,8 @@ def save_training_plot(callback):
 
     window = 10
 
-    rewards_smooth = np.convolve(
-        episode_rewards,
-        np.ones(window) / window,
-        mode="valid"
-    )
-
-    steps_smooth = np.convolve(
-        episode_steps,
-        np.ones(window) / window,
-        mode="valid"
-    )
+    rewards_smooth = np.convolve(episode_rewards, np.ones(window) / window, mode="valid")
+    steps_smooth = np.convolve(episode_steps, np.ones(window) / window, mode="valid")
 
     plt.figure(figsize=(12, 6))
 

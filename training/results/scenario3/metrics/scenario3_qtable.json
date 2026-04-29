@@ -1,0 +1,17 @@
+{
+    "scenario": 3,
+    "algorithm": "Q-table",
+    "environment": "MountainCar-v0",
+    "objective": "minimum_fuel",
+    "training_episodes": 30000,
+    "evaluation_episodes": 100,
+    "seed": 42,
+    "success_rate": 0.72,
+    "success_rate_percent": 72.0,
+    "average_reward": 11.607076644897461,
+    "average_steps": 163.01,
+    "average_fuel": 145.55,
+    "min_steps": 125,
+    "max_steps": 200,
+    "training_time_seconds": 82.17517399787903
+}
