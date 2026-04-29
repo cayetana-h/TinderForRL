@@ -33,9 +33,11 @@ ALGORITHM = "DQN"
 ENV_NAME = "MountainCar-v0"
 OBJECTIVE = "minimum_steps"
 
-TOTAL_TIMESTEPS = 500_000
+TOTAL_TIMESTEPS = 200_000
 EVAL_EPISODES = 100
 MAX_STEPS = 200
+
+SEED = 42
 
 RESULTS_DIR = Path("results")
 METRICS_DIR = RESULTS_DIR / "metrics"
@@ -108,7 +110,9 @@ class TrainingCallback(BaseCallback):
 
 def train_dqn():
     env = gym.make(ENV_NAME)
-    env = ShapedMountainCar(env)   # <-- KEY FIX
+    env = ShapedMountainCar(env)
+    env.action_space.seed(SEED)
+    env.reset(seed=SEED)
     env = Monitor(env)
 
     callback = TrainingCallback()
@@ -129,7 +133,7 @@ def train_dqn():
         exploration_final_eps=0.02,
         policy_kwargs=dict(net_arch=[128, 128]),
         verbose=0,
-        seed=42
+        seed=SEED
     )
 
     start_time = time.time()
@@ -151,6 +155,8 @@ def train_dqn():
 
 def evaluate_dqn(model):
     env = gym.make(ENV_NAME)
+    env.action_space.seed(SEED)
+    env.reset(seed=SEED)
 
     rewards = []
     steps_list = []
@@ -222,6 +228,7 @@ def save_metrics(results, training_time):
         "objective": OBJECTIVE,
         "total_timesteps": TOTAL_TIMESTEPS,
         "evaluation_episodes": EVAL_EPISODES,
+        "seed": SEED,
         "success_rate": results["success_rate"],
         "success_rate_percent": results["success_rate"] * 100,
         "average_reward": results["average_reward"],

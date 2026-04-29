@@ -37,7 +37,7 @@ ENV_NAME = "MountainCar-v0"
 OBJECTIVE = "minimum_steps"
 
 
-TRAIN_EPISODES = 25000
+TRAIN_EPISODES = 30000
 EVAL_EPISODES = 100
 
 
@@ -57,7 +57,7 @@ EPSILON_DECAY = 0.9997
 MAX_STEPS = 200
 
 
-SEED = 42  # Added for reproducibility
+SEED = 42
 
 
 RESULTS_DIR = Path("results")
@@ -115,10 +115,10 @@ def choose_action(q_table, discrete_state, epsilon, env):
 
 
 def train_qtable():
-    # Set seeds for reproducibility
     np.random.seed(SEED)
-    
+
     env = gym.make(ENV_NAME)
+    env.action_space.seed(SEED)
     env.reset(seed=SEED)
 
 
@@ -255,7 +255,8 @@ def train_qtable():
 
 def evaluate_qtable(q_table, position_bins, velocity_bins):
     env = gym.make(ENV_NAME)
-    env.reset(seed=SEED)  # Seed for consistent evaluation
+    env.action_space.seed(SEED)
+    env.reset(seed=SEED)
 
 
     rewards = []
@@ -363,7 +364,7 @@ def save_metrics(evaluation_results, training_time):
         "objective": OBJECTIVE,
         "training_episodes": TRAIN_EPISODES,
         "evaluation_episodes": EVAL_EPISODES,
-        "seed": SEED,  # Added
+        "seed": SEED,
         "success_rate": evaluation_results["success_rate"],
         "success_rate_percent": evaluation_results["success_rate"] * 100,
         "average_reward": evaluation_results["average_reward"],
