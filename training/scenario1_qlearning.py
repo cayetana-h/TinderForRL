@@ -5,7 +5,7 @@ Scenario 1: Discrete MountainCar, Minimum Steps
 Environment: MountainCar-v0
 Objective: Reach the goal as quickly as possible
 Algorithm: Q-learning with Q-table
-Reward: Default Gym reward (-1 per step)
+Reward: Shaped reward with goal bonus (+100)
 
 
 Outputs saved:
@@ -55,6 +55,9 @@ EPSILON_DECAY = 0.9997
 
 
 MAX_STEPS = 200
+
+
+SEED = 42  # Added for reproducibility
 
 
 RESULTS_DIR = Path("results")
@@ -112,7 +115,11 @@ def choose_action(q_table, discrete_state, epsilon, env):
 
 
 def train_qtable():
+    # Set seeds for reproducibility
+    np.random.seed(SEED)
+    
     env = gym.make(ENV_NAME)
+    env.reset(seed=SEED)
 
 
     position_bins = np.linspace(
@@ -248,6 +255,7 @@ def train_qtable():
 
 def evaluate_qtable(q_table, position_bins, velocity_bins):
     env = gym.make(ENV_NAME)
+    env.reset(seed=SEED)  # Seed for consistent evaluation
 
 
     rewards = []
@@ -355,6 +363,7 @@ def save_metrics(evaluation_results, training_time):
         "objective": OBJECTIVE,
         "training_episodes": TRAIN_EPISODES,
         "evaluation_episodes": EVAL_EPISODES,
+        "seed": SEED,  # Added
         "success_rate": evaluation_results["success_rate"],
         "success_rate_percent": evaluation_results["success_rate"] * 100,
         "average_reward": evaluation_results["average_reward"],
