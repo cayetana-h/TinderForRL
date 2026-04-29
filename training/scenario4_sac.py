@@ -1,141 +1,369 @@
 """
-Scenario 4: Continuous MountainCar, Minimum Steps (Linear Cost - Adapted)
+Scenario 4: Continuous MountainCar, Minimum Steps
 
-Environment: MountainCarContinuous-v0 + LinearActionCostWrapper
-Reward: Base reward + LINEAR penalty for action magnitude
-Goal: Reach the goal quickly while minimizing action usage
+Environment: MountainCarContinuous-v0
+Objective: Reach the goal as quickly as possible (minimize timesteps)
+Algorithm: SAC
 
-Algorithm: SAC (Soft Actor-Critic)
+Important:
+Training uses reward shaping to encourage fast solutions.
+Evaluation uses the normal environment to report real performance.
+
+Comparison with Scenario 2:
+- Scenario 2: Minimize fuel (squared action penalty)
+- Scenario 4: Minimize steps (linear time penalty)
+
+Outputs saved:
+- results/models/scenario4_sac.zip
+- results/metrics/scenario4_sac.json
+- results/plots/scenario4_sac_training.png
 """
 
-from __future__ import annotations
 from pathlib import Path
-from typing import Any
-import gymnasium as gym
-import numpy as np
 import json
+import time
+
+import gymnasium as gym
+import matplotlib.pyplot as plt
+import numpy as np
+
 from stable_baselines3 import SAC
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback
 
 
-# ============================================================================
-# LINEAR ACTION COST WRAPPER
-# ============================================================================
+# ============================================================
+# CONFIG
+# ============================================================
 
-class LinearActionCostWrapper(gym.Wrapper):
-    """Wrapper that adds LINEAR cost proportional to |action|"""
+SCENARIO = 4
+ALGORITHM = "SAC"
+ENV_NAME = "MountainCarContinuous-v0"
+OBJECTIVE = "minimum_steps"
 
-    def __init__(self, env: gym.Env, cost_coefficient: float = 0.1):
+TOTAL_TIMESTEPS = 300_000
+EVAL_EPISODES = 100
+MAX_STEPS = 999
+
+RESULTS_DIR = Path("results")
+METRICS_DIR = RESULTS_DIR / "metrics"
+MODELS_DIR = RESULTS_DIR / "models"
+PLOTS_DIR = RESULTS_DIR / "plots"
+
+
+# ============================================================
+# SETUP
+# ============================================================
+
+def create_dirs():
+    METRICS_DIR.mkdir(parents=True, exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+class FastMountainCar(gym.Wrapper):
+    """
+    Reward shaping for minimum steps objective.
+    Penalizes time linearly (not fuel quadratically).
+    """
+    def __init__(self, env):
         super().__init__(env)
-        self.cost_coefficient = float(cost_coefficient)
+        self.previous_position = None
+        self.step_count = 0
 
-    def step(self, action: Any):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        action_magnitude = abs(float(action[0]))
-        extra_cost = self.cost_coefficient * action_magnitude
-        shaped_reward = float(reward) - extra_cost
-        info = dict(info)
-        info["action_magnitude"] = action_magnitude
-        info["extra_action_cost"] = extra_cost
-        return obs, shaped_reward, terminated, truncated, info
+    def reset(self, **kwargs):
+        state, info = self.env.reset(**kwargs)
+        self.previous_position = state[0]
+        self.step_count = 0
+        return state, info
+
+    def step(self, action):
+        next_state, reward, terminated, truncated, info = self.env.step(action)
+
+        position = next_state[0]
+        velocity = next_state[1]
+
+        progress = position - self.previous_position
+        self.step_count += 1
+
+        shaped_reward = 0.0  # Base reward is 0, we will shape it
+
+        # STRONG progress bonus - we want speed!
+        shaped_reward += 25.0 * progress
+
+        # Encourage momentum
+        shaped_reward += 1.0 * abs(velocity)
+
+        # Linear time penalty (not squared fuel penalty like Scenario 2)
+        # Each step costs something, encouraging fast solutions
+        shaped_reward -= 0.1
+
+        # Very strong success bonus
+        if terminated:
+            shaped_reward += 200.0
+            # Bonus for finishing quickly
+            shaped_reward += max(0, (500 - self.step_count) * 0.1)
+
+        # Penalty for being stuck
+        if abs(position) < 0.2 and abs(velocity) < 0.01:
+            shaped_reward -= 0.5
+
+        self.previous_position = position
+
+        return next_state, shaped_reward, terminated, truncated, info
 
 
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-def ensure_dir(path):
-    path = Path(path)
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-class MetricsCallback(BaseCallback):
+class TrainingCallback(BaseCallback):
     def __init__(self):
         super().__init__()
         self.episode_rewards = []
-        self.episode_lengths = []
-    
-    def _on_step(self) -> bool:
-        if len(self.model.ep_info_buffer) > 0:
-            for info in self.model.ep_info_buffer:
-                self.episode_rewards.append(info['r'])
-                self.episode_lengths.append(info['l'])
+        self.episode_steps = []
+        self.success_count = 0
+
+    def _on_step(self):
+        infos = self.locals.get("infos")
+
+        if infos is not None:
+            for info in infos:
+                if "episode" in info:
+                    reward = info["episode"]["r"]
+                    steps = info["episode"]["l"]
+
+                    self.episode_rewards.append(reward)
+                    self.episode_steps.append(steps)
+                    
+                    if steps < MAX_STEPS:
+                        self.success_count += 1
+
+                    if len(self.episode_rewards) % 10 == 0:
+                        recent_reward = np.mean(self.episode_rewards[-10:])
+                        recent_steps = np.mean(self.episode_steps[-10:])
+                        success_rate = (self.success_count / len(self.episode_rewards)) * 100
+
+                        print(
+                            f"Episodes: {len(self.episode_rewards):4d} | "
+                            f"Avg Training Reward: {recent_reward:8.2f} | "
+                            f"Avg Steps: {recent_steps:7.2f} | "
+                            f"Success Rate: {success_rate:5.1f}%"
+                        )
+
         return True
 
 
-# ============================================================================
+# ============================================================
 # TRAINING
-# ============================================================================
+# ============================================================
 
-def train():
-    SEED = 42
-    TOTAL_TIMESTEPS = 100000
-    COST_COEFFICIENT = 0.1
-    
-    np.random.seed(SEED)
-    
-    base_env = gym.make("MountainCarContinuous-v0")
-    env = LinearActionCostWrapper(base_env, cost_coefficient=COST_COEFFICIENT)
+def train_sac():
+    env = gym.make(ENV_NAME)
+    env = FastMountainCar(env)
     env = Monitor(env)
-    env.reset(seed=SEED)
-    
-    print("=" * 60)
-    print("SCENARIO 4: Continuous MountainCar - Min Steps Linear (SAC)")
-    print("=" * 60)
-    
+
+    callback = TrainingCallback()
+
     model = SAC(
         policy="MlpPolicy",
         env=env,
-        learning_rate=0.0003,
-        buffer_size=100000,
-        learning_starts=1000,
-        batch_size=64,
+        learning_rate=0.001,
+        buffer_size=300_000,
+        learning_starts=1_000,
+        batch_size=256,
+        tau=0.005,
         gamma=0.99,
-        ent_coef="auto",
-        verbose=1,
-        seed=SEED,
+        train_freq=1,
+        gradient_steps=1,
+        ent_coef="auto",  # Auto-tune entropy
+        target_update_interval=1,
+        policy_kwargs=dict(net_arch=[256, 256]),
+        verbose=0,
+        seed=42
     )
-    
-    callback = MetricsCallback()
-    model.learn(total_timesteps=TOTAL_TIMESTEPS, callback=callback, progress_bar=True)
-    
-    results_dir = ensure_dir("results/models")
-    metrics_dir = ensure_dir("results/metrics/scenario4_sac")
-    
-    model.save(results_dir / "scenario4_sac")
-    
-    rewards = np.array(callback.episode_rewards, dtype=np.float32)
-    steps = np.array(callback.episode_lengths, dtype=np.int32)
-    
-    np.save(metrics_dir / "rewards.npy", rewards)
-    np.save(metrics_dir / "steps.npy", steps)
-    
-    successes = rewards > 90
-    
-    summary = {
-        "algorithm": "SAC",
-        "scenario": "Scenario 4 - Continuous, Min Steps (Linear)",
-        "total_timesteps": TOTAL_TIMESTEPS,
-        "num_episodes": len(rewards),
-        "mean_reward": float(np.mean(rewards)),
-        "mean_steps": float(np.mean(steps)),
-        "success_rate": float(np.mean(successes)),
-    }
-    
-    with open(metrics_dir / "summary.json", "w") as f:
-        json.dump(summary, f, indent=2)
-    
-    print("\n" + "=" * 60)
-    print(f"Training complete!")
-    print(f"Success rate: {summary['success_rate']:.2%}")
-    print(f"Mean reward: {summary['mean_reward']:.2f}")
-    print(f"Results saved to {metrics_dir}")
-    print("=" * 60)
-    
+
+    start_time = time.time()
+
+    model.learn(
+        total_timesteps=TOTAL_TIMESTEPS,
+        callback=callback
+    )
+
+    training_time = time.time() - start_time
     env.close()
+
+    return model, callback, training_time
+
+
+# ============================================================
+# EVALUATION
+# ============================================================
+
+def evaluate_sac(model):
+    # Important: normal environment, not shaped wrapper.
+    env = gym.make(ENV_NAME)
+
+    rewards = []
+    steps_list = []
+    successes = []
+    fuel_costs = []
+
+    for episode in range(EVAL_EPISODES):
+        state, _ = env.reset()
+
+        total_reward = 0
+        steps = 0
+        success = False
+        fuel_cost = 0
+
+        for step in range(MAX_STEPS):
+            action, _ = model.predict(state, deterministic=True)
+
+            next_state, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
+
+            action_value = float(action[0])
+            fuel_cost += action_value ** 2
+
+            total_reward += reward
+            steps += 1
+            state = next_state
+
+            if terminated:
+                success = True
+                break
+
+            if done:
+                break
+
+        rewards.append(total_reward)
+        steps_list.append(steps)
+        successes.append(1 if success else 0)
+        fuel_costs.append(fuel_cost)
+
+    env.close()
+
+    return {
+        "success_rate": float(np.mean(successes)),
+        "average_reward": float(np.mean(rewards)),
+        "average_steps": float(np.mean(steps_list)),
+        "average_fuel": float(np.mean(fuel_costs)),
+        "min_steps": int(np.min(steps_list)),
+        "max_steps": int(np.max(steps_list))
+    }
+
+
+# ============================================================
+# SAVING
+# ============================================================
+
+def save_model(model):
+    model_path = MODELS_DIR / "scenario4_sac"
+    model.save(model_path)
+    print(f"Model saved to {model_path}.zip")
+
+
+def save_metrics(evaluation_results, training_time):
+    metrics = {
+        "scenario": SCENARIO,
+        "algorithm": ALGORITHM,
+        "environment": ENV_NAME,
+        "objective": OBJECTIVE,
+        "total_timesteps": TOTAL_TIMESTEPS,
+        "evaluation_episodes": EVAL_EPISODES,
+        "success_rate": evaluation_results["success_rate"],
+        "success_rate_percent": evaluation_results["success_rate"] * 100,
+        "average_reward": evaluation_results["average_reward"],
+        "average_steps": evaluation_results["average_steps"],
+        "average_fuel": evaluation_results["average_fuel"],
+        "min_steps": evaluation_results["min_steps"],
+        "max_steps": evaluation_results["max_steps"],
+        "training_time_seconds": training_time
+    }
+
+    metrics_path = METRICS_DIR / "scenario4_sac.json"
+
+    with open(metrics_path, "w") as file:
+        json.dump(metrics, file, indent=4)
+
+    print(f"Metrics saved to {metrics_path}")
+
+
+def save_training_plot(callback):
+    episode_rewards = callback.episode_rewards
+    episode_steps = callback.episode_steps
+
+    if len(episode_rewards) < 10:
+        print("Not enough episode data to create training plot.")
+        return
+
+    window = 10
+
+    rewards_smooth = np.convolve(
+        episode_rewards,
+        np.ones(window) / window,
+        mode="valid"
+    )
+
+    steps_smooth = np.convolve(
+        episode_steps,
+        np.ones(window) / window,
+        mode="valid"
+    )
+
+    plt.figure(figsize=(12, 6))
+
+    plt.subplot(2, 1, 1)
+    plt.plot(rewards_smooth)
+    plt.title("Scenario 4 SAC Training Performance")
+    plt.ylabel("Avg Training Reward")
+
+    plt.subplot(2, 1, 2)
+    plt.plot(steps_smooth)
+    plt.ylabel("Average Steps")
+    plt.xlabel("Episode")
+
+    plt.tight_layout()
+
+    plot_path = PLOTS_DIR / "scenario4_sac_training.png"
+    plt.savefig(plot_path)
+    plt.close()
+
+    print(f"Training plot saved to {plot_path}")
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+    create_dirs()
+
+    print("=" * 60)
+    print("SCENARIO 4: CONTINUOUS MOUNTAINCAR - MINIMUM STEPS")
+    print("ALGORITHM: SAC")
+    print("=" * 60)
+    print(f"Total Timesteps: {TOTAL_TIMESTEPS:,}")
+    print("Objective: Minimize timesteps (linear cost)")
+    print("=" * 60)
+
+    model, callback, training_time = train_sac()
+
+    print("\nEvaluating trained SAC...")
+    evaluation_results = evaluate_sac(model)
+
+    print("\nEvaluation Results:")
+    print(f"Success Rate: {evaluation_results['success_rate'] * 100:.2f}%")
+    print(f"Average Reward: {evaluation_results['average_reward']:.2f}")
+    print(f"Average Steps: {evaluation_results['average_steps']:.2f}")
+    print(f"Average Fuel: {evaluation_results['average_fuel']:.2f}")
+    print(f"Min Steps: {evaluation_results['min_steps']}")
+    print(f"Max Steps: {evaluation_results['max_steps']}")
+    print(f"Training Time: {training_time:.2f} seconds")
+
+    save_model(model)
+    save_metrics(evaluation_results, training_time)
+    save_training_plot(callback)
+
+    print("\nDone.")
 
 
 if __name__ == "__main__":
-    train()
+    main()

@@ -38,7 +38,7 @@ ALGORITHM = "TD3"
 ENV_NAME = "MountainCarContinuous-v0"
 OBJECTIVE = "minimum_fuel"
 
-TOTAL_TIMESTEPS = 150_000
+TOTAL_TIMESTEPS = 300_000
 EVAL_EPISODES = 100
 MAX_STEPS = 999
 
@@ -59,6 +59,10 @@ def create_dirs():
 
 
 class FuelEfficientMountainCar(gym.Wrapper):
+    """
+    Stronger reward shaping wrapper for minimum fuel objective.
+    Enhanced incentives to help agent discover solution.
+    """
     def __init__(self, env):
         super().__init__(env)
         self.previous_position = None
@@ -79,18 +83,22 @@ class FuelEfficientMountainCar(gym.Wrapper):
 
         shaped_reward = reward
 
-        # Encourage actual movement toward the goal.
-        shaped_reward += 10.0 * progress
+        # STRONGER progress bonus - critical for discovering solution
+        shaped_reward += 25.0 * progress
 
-        # Encourage useful momentum, but not too aggressively.
-        shaped_reward += 0.1 * abs(velocity)
+        # Reward building momentum
+        shaped_reward += 1.0 * abs(velocity)
 
-        # Still penalize fuel because this is the minimum-fuel scenario.
+        # Small fuel penalty (still min-fuel scenario)
         shaped_reward -= 0.01 * fuel_cost
 
-        # Strong success signal.
+        # Very strong success signal
         if terminated:
-            shaped_reward += 100.0
+            shaped_reward += 200.0
+
+        # Small penalty for being stuck in the valley
+        if abs(position) < 0.2 and abs(velocity) < 0.01:
+            shaped_reward -= 0.5
 
         self.previous_position = position
 
@@ -102,6 +110,7 @@ class TrainingCallback(BaseCallback):
         super().__init__()
         self.episode_rewards = []
         self.episode_steps = []
+        self.success_count = 0
 
     def _on_step(self):
         infos = self.locals.get("infos")
@@ -112,56 +121,50 @@ class TrainingCallback(BaseCallback):
                     reward = info["episode"]["r"]
                     steps = info["episode"]["l"]
 
-
                     self.episode_rewards.append(reward)
                     self.episode_steps.append(steps)
-
+                    
+                    if steps < MAX_STEPS:
+                        self.success_count += 1
 
                     if len(self.episode_rewards) % 10 == 0:
                         recent_reward = np.mean(self.episode_rewards[-10:])
                         recent_steps = np.mean(self.episode_steps[-10:])
-
+                        success_rate = (self.success_count / len(self.episode_rewards)) * 100
 
                         print(
                             f"Episodes: {len(self.episode_rewards):4d} | "
                             f"Avg Training Reward: {recent_reward:8.2f} | "
-                            f"Avg Steps: {recent_steps:7.2f}"
+                            f"Avg Steps: {recent_steps:7.2f} | "
+                            f"Success Rate: {success_rate:5.1f}%"
                         )
 
-
         return True
-
-
 
 
 # ============================================================
 # TRAINING
 # ============================================================
 
-
 def train_td3():
     env = gym.make(ENV_NAME)
     env = FuelEfficientMountainCar(env)
     env = Monitor(env)
 
-
     n_actions = env.action_space.shape[-1]
-
 
     action_noise = NormalActionNoise(
         mean=np.zeros(n_actions),
         sigma=0.2 * np.ones(n_actions)
     )
 
-
     callback = TrainingCallback()
-
 
     model = TD3(
         policy="MlpPolicy",
         env=env,
         learning_rate=0.001,
-        buffer_size=200_000,
+        buffer_size=300_000,
         learning_starts=1_000,
         batch_size=128,
         tau=0.005,
@@ -177,85 +180,66 @@ def train_td3():
         seed=42
     )
 
-
     start_time = time.time()
-
 
     model.learn(
         total_timesteps=TOTAL_TIMESTEPS,
         callback=callback
     )
 
-
     training_time = time.time() - start_time
     env.close()
 
-
     return model, callback, training_time
-
-
 
 
 # ============================================================
 # EVALUATION
 # ============================================================
 
-
 def evaluate_td3(model):
     # Important: normal environment, not shaped wrapper.
     env = gym.make(ENV_NAME)
-
 
     rewards = []
     steps_list = []
     successes = []
     fuel_costs = []
 
-
     for episode in range(EVAL_EPISODES):
         state, _ = env.reset()
-
 
         total_reward = 0
         steps = 0
         success = False
         fuel_cost = 0
 
-
         for step in range(MAX_STEPS):
             action, _ = model.predict(state, deterministic=True)
-
 
             next_state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
 
-
             action_value = float(action[0])
             fuel_cost += action_value ** 2
-
 
             total_reward += reward
             steps += 1
             state = next_state
 
-
             if terminated:
                 success = True
                 break
 
-
             if done:
                 break
-
 
         rewards.append(total_reward)
         steps_list.append(steps)
         successes.append(1 if success else 0)
         fuel_costs.append(fuel_cost)
 
-
     env.close()
-
 
     return {
         "success_rate": float(np.mean(successes)),
@@ -267,19 +251,14 @@ def evaluate_td3(model):
     }
 
 
-
-
 # ============================================================
 # SAVING
 # ============================================================
-
 
 def save_model(model):
     model_path = MODELS_DIR / "scenario2_td3"
     model.save(model_path)
     print(f"Model saved to {model_path}.zip")
-
-
 
 
 def save_metrics(evaluation_results, training_time):
@@ -300,31 +279,23 @@ def save_metrics(evaluation_results, training_time):
         "training_time_seconds": training_time
     }
 
-
     metrics_path = METRICS_DIR / "scenario2_td3.json"
-
 
     with open(metrics_path, "w") as file:
         json.dump(metrics, file, indent=4)
 
-
     print(f"Metrics saved to {metrics_path}")
-
-
 
 
 def save_training_plot(callback):
     episode_rewards = callback.episode_rewards
     episode_steps = callback.episode_steps
 
-
     if len(episode_rewards) < 10:
         print("Not enough episode data to create training plot.")
         return
 
-
     window = 10
-
 
     rewards_smooth = np.convolve(
         episode_rewards,
@@ -332,63 +303,52 @@ def save_training_plot(callback):
         mode="valid"
     )
 
-
     steps_smooth = np.convolve(
         episode_steps,
         np.ones(window) / window,
         mode="valid"
     )
 
-
     plt.figure(figsize=(12, 6))
-
 
     plt.subplot(2, 1, 1)
     plt.plot(rewards_smooth)
     plt.title("Scenario 2 TD3 Training Performance")
     plt.ylabel("Avg Training Reward")
 
-
     plt.subplot(2, 1, 2)
     plt.plot(steps_smooth)
     plt.ylabel("Average Steps")
     plt.xlabel("Episode")
 
-
     plt.tight_layout()
-
 
     plot_path = PLOTS_DIR / "scenario2_td3_training.png"
     plt.savefig(plot_path)
     plt.close()
 
-
     print(f"Training plot saved to {plot_path}")
-
-
 
 
 # ============================================================
 # MAIN
 # ============================================================
 
-
 def main():
     create_dirs()
-
 
     print("=" * 60)
     print("SCENARIO 2: CONTINUOUS MOUNTAINCAR - MINIMUM FUEL")
     print("ALGORITHM: TD3")
     print("=" * 60)
-
+    print(f"Total Timesteps: {TOTAL_TIMESTEPS:,}")
+    print("Enhanced Reward Shaping: Enabled")
+    print("=" * 60)
 
     model, callback, training_time = train_td3()
 
-
     print("\nEvaluating trained TD3...")
     evaluation_results = evaluate_td3(model)
-
 
     print("\nEvaluation Results:")
     print(f"Success Rate: {evaluation_results['success_rate'] * 100:.2f}%")
@@ -399,15 +359,11 @@ def main():
     print(f"Max Steps: {evaluation_results['max_steps']}")
     print(f"Training Time: {training_time:.2f} seconds")
 
-
     save_model(model)
     save_metrics(evaluation_results, training_time)
     save_training_plot(callback)
 
-
     print("\nDone.")
-
-
 
 
 if __name__ == "__main__":
