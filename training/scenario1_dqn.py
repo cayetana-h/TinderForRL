@@ -6,9 +6,9 @@ Objective: Reach the goal as quickly as possible
 Algorithm: DQN (with SAME reward shaping as Q-learning)
 
 Outputs saved:
-- results/models/scenario1_dqn.zip
-- results/metrics/scenario1_dqn.json
-- results/plots/scenario1_dqn_training.png
+- results/scenario1/models/scenario1_dqn.zip
+- results/scenario1/metrics/scenario1_dqn.json
+- results/scenario1/plots/scenario1_dqn_training.png
 """
 
 from pathlib import Path
@@ -39,7 +39,7 @@ MAX_STEPS = 200
 
 SEED = 42
 
-RESULTS_DIR = Path("results")
+RESULTS_DIR = Path("results") / "scenario1"
 METRICS_DIR = RESULTS_DIR / "metrics"
 MODELS_DIR = RESULTS_DIR / "models"
 PLOTS_DIR = RESULTS_DIR / "plots"
@@ -236,7 +236,7 @@ def save_metrics(results, training_time):
         "average_fuel": results["average_fuel"],
         "min_steps": results["min_steps"],
         "max_steps": results["max_steps"],
-        "training_time_seconds": training_time
+        "training_time_seconds": results["training_time_seconds"] if "training_time_seconds" in results else training_time
     }
 
     path = METRICS_DIR / "scenario1_dqn.json"

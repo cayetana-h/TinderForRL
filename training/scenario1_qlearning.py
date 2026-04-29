@@ -9,9 +9,9 @@ Reward: Shaped reward with goal bonus (+100)
 
 
 Outputs saved:
-- results/models/scenario1_qtable.pkl
-- results/metrics/scenario1_qtable.json
-- results/plots/scenario1_qtable_training.png
+- results/scenario1/models/scenario1_qtable.pkl
+- results/scenario1/metrics/scenario1_qtable.json
+- results/scenario1/plots/scenario1_qtable_training.png
 """
 
 
@@ -60,7 +60,7 @@ MAX_STEPS = 200
 SEED = 42
 
 
-RESULTS_DIR = Path("results")
+RESULTS_DIR = Path("results") / "scenario1"
 METRICS_DIR = RESULTS_DIR / "metrics"
 MODELS_DIR = RESULTS_DIR / "models"
 PLOTS_DIR = RESULTS_DIR / "plots"
@@ -343,17 +343,12 @@ def save_model(q_table, position_bins, velocity_bins):
         "velocity_bins": velocity_bins
     }
 
-
     model_path = MODELS_DIR / "scenario1_qtable.pkl"
-
 
     with open(model_path, "wb") as file:
         pickle.dump(model_data, file)
 
-
     print(f"Model saved to {model_path}")
-
-
 
 
 def save_metrics(evaluation_results, training_time):
@@ -375,22 +370,16 @@ def save_metrics(evaluation_results, training_time):
         "training_time_seconds": training_time
     }
 
-
     metrics_path = METRICS_DIR / "scenario1_qtable.json"
-
 
     with open(metrics_path, "w") as file:
         json.dump(metrics, file, indent=4)
 
-
     print(f"Metrics saved to {metrics_path}")
-
-
 
 
 def save_training_plot(episode_rewards, episode_steps, success_history):
     window = 100
-
 
     rewards_smooth = np.convolve(
         episode_rewards,
@@ -398,13 +387,11 @@ def save_training_plot(episode_rewards, episode_steps, success_history):
         mode="valid"
     )
 
-
     steps_smooth = np.convolve(
         episode_steps,
         np.ones(window) / window,
         mode="valid"
     )
-
 
     success_smooth = np.convolve(
         success_history,
@@ -412,38 +399,29 @@ def save_training_plot(episode_rewards, episode_steps, success_history):
         mode="valid"
     ) * 100
 
-
     plt.figure(figsize=(12, 8))
-
 
     plt.subplot(3, 1, 1)
     plt.plot(rewards_smooth)
     plt.title("Scenario 1 Q-table Training Performance")
     plt.ylabel("Average Reward")
 
-
     plt.subplot(3, 1, 2)
     plt.plot(steps_smooth)
     plt.ylabel("Average Steps")
-
 
     plt.subplot(3, 1, 3)
     plt.plot(success_smooth)
     plt.ylabel("Success Rate (%)")
     plt.xlabel("Episode")
 
-
     plt.tight_layout()
-
 
     plot_path = PLOTS_DIR / "scenario1_qtable_training.png"
     plt.savefig(plot_path)
     plt.close()
 
-
     print(f"Training plot saved to {plot_path}")
-
-
 
 
 # ============================================================
@@ -454,15 +432,12 @@ def save_training_plot(episode_rewards, episode_steps, success_history):
 def main():
     create_dirs()
 
-
     print("=" * 60)
     print("SCENARIO 1: DISCRETE MOUNTAINCAR - MINIMUM STEPS")
     print("ALGORITHM: Q-TABLE")
     print("=" * 60)
 
-
     training_results = train_qtable()
-
 
     q_table = training_results["q_table"]
     position_bins = training_results["position_bins"]
@@ -472,14 +447,12 @@ def main():
     success_history = training_results["success_history"]
     training_time = training_results["training_time"]
 
-
     print("\nEvaluating trained Q-table...")
     evaluation_results = evaluate_qtable(
         q_table,
         position_bins,
         velocity_bins
     )
-
 
     print("\nEvaluation Results:")
     print(f"Success Rate: {evaluation_results['success_rate'] * 100:.2f}%")
@@ -490,15 +463,11 @@ def main():
     print(f"Max Steps: {evaluation_results['max_steps']}")
     print(f"Training Time: {training_time:.2f} seconds")
 
-
     save_model(q_table, position_bins, velocity_bins)
     save_metrics(evaluation_results, training_time)
     save_training_plot(episode_rewards, episode_steps, success_history)
 
-
     print("\nDone.")
-
-
 
 
 if __name__ == "__main__":

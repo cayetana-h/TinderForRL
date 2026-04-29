@@ -1,0 +1,17 @@
+{
+    "scenario": 1,
+    "algorithm": "DQN",
+    "environment": "MountainCar-v0",
+    "objective": "minimum_steps",
+    "total_timesteps": 200000,
+    "evaluation_episodes": 100,
+    "seed": 42,
+    "success_rate": 0.81,
+    "success_rate_percent": 81.0,
+    "average_reward": -160.05,
+    "average_steps": 160.05,
+    "average_fuel": 156.42,
+    "min_steps": 97,
+    "max_steps": 200,
+    "training_time_seconds": 33.63407301902771
+}
