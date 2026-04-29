@@ -49,6 +49,7 @@ RESULTS_DIR = Path("results") / "scenario4"
 METRICS_DIR = RESULTS_DIR / "metrics"
 MODELS_DIR = RESULTS_DIR / "models"
 PLOTS_DIR = RESULTS_DIR / "plots"
+TENSORBOARD_DIR = RESULTS_DIR / "tensorboard_logs"
 
 
 # ============================================================
@@ -59,6 +60,7 @@ def create_dirs():
     METRICS_DIR.mkdir(parents=True, exist_ok=True)
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    TENSORBOARD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class FastMountainCar(gym.Wrapper):
@@ -173,8 +175,7 @@ def train_sac():
         gradient_steps=1,
         ent_coef="auto",
         target_update_interval=1,
-        policy_kwargs=dict(net_arch=[256, 256]),
-        verbose=0,
+        policy_kwargs=dict(net_arch=[256, 256]),        tensorboard_log=str(TENSORBOARD_DIR),        verbose=0,
         seed=42
     )
 

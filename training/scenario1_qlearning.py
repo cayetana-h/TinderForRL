@@ -64,6 +64,7 @@ RESULTS_DIR = Path("results") / "scenario1"
 METRICS_DIR = RESULTS_DIR / "metrics"
 MODELS_DIR = RESULTS_DIR / "models"
 PLOTS_DIR = RESULTS_DIR / "plots"
+TENSORBOARD_DIR = RESULTS_DIR / "tensorboard_logs"
 
 
 
@@ -77,6 +78,7 @@ def create_dirs():
     METRICS_DIR.mkdir(parents=True, exist_ok=True)
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    TENSORBOARD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 

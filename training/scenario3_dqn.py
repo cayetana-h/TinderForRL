@@ -48,6 +48,7 @@ RESULTS_DIR = Path("results") / "scenario3"
 METRICS_DIR = RESULTS_DIR / "metrics"
 MODELS_DIR = RESULTS_DIR / "models"
 PLOTS_DIR = RESULTS_DIR / "plots"
+TENSORBOARD_DIR = RESULTS_DIR / "tensorboard_logs"
 
 
 # ============================================================
@@ -58,6 +59,7 @@ def create_dirs():
     METRICS_DIR.mkdir(parents=True, exist_ok=True)
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    TENSORBOARD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class DiscreteActionCostWrapper(gym.Wrapper):
@@ -175,6 +177,7 @@ def train_dqn():
         exploration_initial_eps=1.0,
         exploration_final_eps=0.02,
         policy_kwargs=dict(net_arch=[128, 128]),
+        tensorboard_log=str(TENSORBOARD_DIR),
         verbose=0,
         seed=SEED
     )
