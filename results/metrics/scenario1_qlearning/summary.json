@@ -1,9 +1,0 @@
-{
-  "algorithm": "Q-learning",
-  "scenario": "Scenario 1 - Discrete, Min Steps",
-  "num_episodes": 10000,
-  "mean_reward": -197.9091,
-  "mean_steps": 197.9091,
-  "success_rate": 0.083,
-  "final_epsilon": 0.13530821527775866
-}
